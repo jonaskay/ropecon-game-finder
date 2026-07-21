@@ -93,16 +93,41 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
       <p class="meta">
         {program.items.length} gaming sessions · program as of {generatedAt} (Helsinki)
       </p>
+      {/* Controls are JS-only: without JS the full list below renders unfiltered. */}
+      <div class="controls" hidden>
+        <div class="views" role="group" aria-label="Time window">
+          <button type="button" class="view-btn" data-view="soon" aria-pressed="true">
+            Joinable soon
+          </button>
+          <button type="button" class="view-btn" data-view="all" aria-pressed="false">
+            All sessions
+          </button>
+        </div>
+        <p class="result-count" aria-live="polite"></p>
+      </div>
+      <p class="now-notice" hidden></p>
     </header>
 
     <main>
+      <p class="empty-state" hidden>
+        Nothing joinable in the next hour. Switch to <strong>All sessions</strong> to see the
+        full program.
+      </p>
       {
         days.map((group) => (
           <section class="day">
             <h2>{dayHeading(group.day)}</h2>
             <ul class="sessions">
               {group.items.map((item) => (
-                <li class:list={["session", { cancelled: item.isCancelled }]}>
+                <li
+                  class:list={["session", { cancelled: item.isCancelled }]}
+                  data-start={item.start}
+                  data-end={item.end}
+                  data-cancelled={String(item.isCancelled)}
+                  data-revolving={String(item.isRevolvingDoor)}
+                  data-signup-mode={item.signupMode}
+                  data-capacity={item.capacityStatus}
+                >
                   <div class="session-head">
                     <span class="time">{timeRange(item.start, item.end)}</span>
                     <h3 class="title">{item.title}</h3>
@@ -146,6 +171,121 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
     </main>
   </body>
 </html>
+
+<script>
+  /**
+   * Step 6/7 runtime: filter the already-prerendered list to a resolved "now".
+   *
+   * No fetch — every field the classifier needs is baked into `data-*` attributes on
+   * each `.session`, so the client contract (only `program.json`, and here not even
+   * that) holds and the list still renders with JS disabled. `?now=` overrides the
+   * device clock for testing outside con dates (Step 7).
+   */
+  import {
+    classifyJoinableSoon,
+    resolveNow,
+    type TimeWindowInput,
+  } from "../classify/window.ts";
+
+  const sessions = [...document.querySelectorAll<HTMLLIElement>(".session")].map((el) => ({
+    el,
+    input: {
+      start: el.dataset.start ?? "",
+      end: el.dataset.end ?? "",
+      isCancelled: el.dataset.cancelled === "true",
+      isRevolvingDoor: el.dataset.revolving === "true",
+      signupMode: el.dataset.signupMode,
+      capacityStatus: el.dataset.capacity,
+    } as TimeWindowInput,
+  }));
+  const daySections = [...document.querySelectorAll<HTMLElement>(".day")];
+  const controls = document.querySelector<HTMLElement>(".controls");
+  const countEl = document.querySelector<HTMLElement>(".result-count");
+  const emptyEl = document.querySelector<HTMLElement>(".empty-state");
+  const nowNotice = document.querySelector<HTMLElement>(".now-notice");
+  const viewButtons = [...document.querySelectorAll<HTMLButtonElement>(".view-btn")];
+
+  const params = new URLSearchParams(location.search);
+  const { nowMs, overridden } = resolveNow(params.get("now"), Date.now());
+
+  const notationFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Helsinki",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+
+  function ensureBadge(el: HTMLLIElement): HTMLSpanElement {
+    let badge = el.querySelector<HTMLSpanElement>(".window-badge");
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "badge window-badge";
+      el.querySelector(".session-head")?.appendChild(badge);
+    }
+    return badge;
+  }
+
+  function windowLabel(overlap: string, startMs: number): string {
+    if (overlap === "join-in-progress") return "In progress · join anytime";
+    const mins = Math.round((startMs - nowMs) / 60_000);
+    return mins <= 0 ? "Starting now" : `Starts in ${mins} min`;
+  }
+
+  function render(view: "soon" | "all"): void {
+    if (view === "all") {
+      for (const { el } of sessions) {
+        el.hidden = false;
+        el.querySelector(".window-badge")?.remove();
+      }
+      for (const section of daySections) section.hidden = false;
+      if (emptyEl) emptyEl.hidden = true;
+      if (countEl) countEl.textContent = `${sessions.length} sessions`;
+      return;
+    }
+
+    let shown = 0;
+    for (const { el, input } of sessions) {
+      const { included, overlap } = classifyJoinableSoon(input, nowMs);
+      el.hidden = !included;
+      if (included) {
+        shown += 1;
+        ensureBadge(el).textContent = windowLabel(overlap, Date.parse(input.start));
+      } else {
+        el.querySelector(".window-badge")?.remove();
+      }
+    }
+    // Hide day headings whose sessions are all filtered out.
+    for (const section of daySections) {
+      const anyVisible = [...section.querySelectorAll<HTMLLIElement>(".session")].some(
+        (el) => !el.hidden,
+      );
+      section.hidden = !anyVisible;
+    }
+    if (emptyEl) emptyEl.hidden = shown > 0;
+    if (countEl) {
+      countEl.textContent =
+        shown === 0 ? "No joinable sessions" : `${shown} joinable in the next hour`;
+    }
+  }
+
+  function setView(view: "soon" | "all"): void {
+    for (const btn of viewButtons) {
+      btn.setAttribute("aria-pressed", String(btn.dataset.view === view));
+    }
+    render(view);
+  }
+
+  // Reveal the JS-only controls and wire them up.
+  controls?.removeAttribute("hidden");
+  for (const btn of viewButtons) {
+    btn.addEventListener("click", () => setView(btn.dataset.view as "soon" | "all"));
+  }
+  if (overridden && nowNotice) {
+    nowNotice.hidden = false;
+    nowNotice.textContent = `Testing as if it were ${notationFmt.format(nowMs)} (Helsinki) · ?now= override active`;
+  }
+
+  setView("soon");
+</script>
 
 <style>
   :root {
@@ -232,6 +372,66 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
   .cancelled-badge {
     background: #fbe3e3;
     color: var(--accent);
+  }
+
+  .window-badge {
+    background: #e7f0e7;
+    color: #2f6b34;
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .views {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    overflow: hidden;
+  }
+
+  .view-btn {
+    appearance: none;
+    border: 0;
+    background: #fff;
+    color: var(--fg);
+    font: inherit;
+    font-size: 0.9rem;
+    padding: 0.35rem 0.75rem;
+    cursor: pointer;
+  }
+
+  .view-btn + .view-btn {
+    border-left: 1px solid var(--line);
+  }
+
+  .view-btn[aria-pressed="true"] {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .result-count {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .now-notice {
+    margin: 0.5rem 0 0;
+    padding: 0.4rem 0.6rem;
+    background: #fff6e0;
+    border-radius: 0.3rem;
+    font-size: 0.85rem;
+    color: #7a5b00;
+  }
+
+  .empty-state {
+    color: var(--muted);
+    padding: 1.5rem 0;
   }
 
   .short {

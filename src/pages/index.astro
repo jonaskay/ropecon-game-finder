@@ -2,7 +2,7 @@
 /**
  * Steps 5–8 — the guest-facing render (handoff §"Step 5"/§"Step 6"/§8).
  *
- * Renders the full gaming list end to end from the baked `program.json`: title,
+ * Renders the full gaming list end to end from normalized `program.json`: title,
  * time (Europe/Helsinki), location (linked to the convention map), signup mode with
  * its participation affordance, cancellation, and capacity state. Step 6 adds the
  * client-side time-window filter; Step 8 finalises the signup/participation copy
@@ -13,18 +13,21 @@
  * Konsti response. Copy is English-only for this first release; the config already
  * carries `labelFi`/`labelEn`, so bilingual FI/EN is a later, additive change.
  *
- * The envelope is read at build time from `public/program.json` (the artifact
- * `scripts/build-program.ts` bakes), so this is a purely static render.
+ * Development reads the baked `public/program.json`; production builds read the live
+ * snapshot in external storage. Either way, the result is still a purely static render.
  */
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { conventionMapUrl } from "../config/venue.ts";
 import type { ProgramData, ProgramItem } from "../normalise/types.ts";
+import { loadProgramData } from "../program/load.ts";
 
-// Read the baked artifact from the project root (cwd is stable during build,
-// unlike import.meta.url which points at the bundled chunk).
+// Development uses the baked fixture. Production deployments load the live, privacy-safe
+// normalized snapshot from external storage while rendering the static page.
 const programPath = resolve(process.cwd(), "public/program.json");
-const program = JSON.parse(readFileSync(programPath, "utf8")) as ProgramData;
+const program: ProgramData = await loadProgramData({
+  development: import.meta.env.DEV,
+  localPath: programPath,
+});
 
 // Europe/Helsinki display formatters (UTC instants in, con-local strings out).
 const dayHeadingFmt = new Intl.DateTimeFormat("en-GB", {

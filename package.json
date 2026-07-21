@@ -1,27 +1,23 @@
 {
   "name": "ropecon-game-finder",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "astro dev",
-    "build:program": "bun scripts/build-program.ts",
-    "prebuild": "bun scripts/build-program.ts",
-    "build": "astro build",
-    "preview": "astro preview",
+    "dev": "bun --filter @ropecon/web dev",
+    "build": "bun run build:web && bun run build:job",
+    "build:web": "bun --filter @ropecon/web build",
+    "build:job": "bun --filter @ropecon/program-refresh build",
+    "test": "bun run --filter '*' test",
+    "typecheck": "bun run --filter '*' typecheck",
     "audit:report": "bun scripts/audit-konsti.ts report",
     "audit:check": "bun scripts/audit-konsti.ts check",
-    "test": "vitest run"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "module",
-  "dependencies": {
-    "@astrojs/netlify": "^8.1.2",
-    "astro": "^7.1.1"
+    "check:no-fallback": "! rg -n '/program[.]json' apps/web/src apps/web/public"
   },
   "devDependencies": {
-    "vitest": "^4.1.10"
+    "@ropecon/program-core": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
   }
 }

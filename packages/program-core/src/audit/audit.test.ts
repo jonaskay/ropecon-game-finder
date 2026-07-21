@@ -18,7 +18,7 @@ import { check, scanForPii, DEFAULT_CONFIG, type AuditConfig } from "./checks.ts
 import { renderReport } from "./report.ts";
 import { runAudit } from "./run.ts";
 
-const FIXTURE_PATH = "fixtures/konsti-sample.synthetic.json";
+const FIXTURE_PATH = "../../fixtures/konsti-sample.synthetic.json";
 const fixtureRaw = readFileSync(FIXTURE_PATH, "utf8");
 const fixtureItems = projectResponse(JSON.parse(fixtureRaw));
 
@@ -244,7 +244,7 @@ describe("Tier-2 warn-on-new (plan §2)", () => {
 describe("Tier-3 structural / integrity is hard (plan §4)", () => {
   it("missing required field → hard", () => {
     const item = baseItem({ tags: ["preConventionWeek"] });
-    delete (item.programItem as Record<string, unknown>).programType;
+    delete (item.programItem as unknown as Record<string, unknown>).programType;
     const { findings, hasHardFailure } = runAudit([item], tightConfig());
     const f = findings.find((x) => x.code === "SCHEMA_VIOLATION");
     expect(f?.severity).toBe("hard");
@@ -253,7 +253,7 @@ describe("Tier-3 structural / integrity is hard (plan §4)", () => {
 
   it("null required field → hard, and is noted in nullFields", () => {
     const item = baseItem({ tags: ["preConventionWeek"] });
-    (item.programItem as Record<string, unknown>).title = null;
+    (item.programItem as unknown as Record<string, unknown>).title = null;
     const e = enumerate([item]);
     expect(e.structural.nullFields).toContain("title");
     expect(check(e, tightConfig()).find((x) => x.code === "SCHEMA_VIOLATION")?.severity).toBe("hard");
@@ -261,7 +261,7 @@ describe("Tier-3 structural / integrity is hard (plan §4)", () => {
 
   it("unknown top-level key → hard", () => {
     const item = baseItem({ tags: ["preConventionWeek"] });
-    (item.programItem as Record<string, unknown>).surpriseField = "x";
+    (item.programItem as unknown as Record<string, unknown>).surpriseField = "x";
     const e = enumerate([item]);
     expect(e.structural.unknownTopLevelKeys).toContain("surpriseField");
     expect(check(e, tightConfig()).find((x) => x.code === "UNKNOWN_TOP_LEVEL_KEY")?.severity).toBe("hard");
@@ -297,7 +297,7 @@ describe("severity split (plan §4, §8)", () => {
     expect(warnOnly.findings.every((f) => f.severity === "warn")).toBe(true);
 
     const item = baseItem({ tags: ["preConventionWeek"] });
-    delete (item.programItem as Record<string, unknown>).startTime;
+    delete (item.programItem as unknown as Record<string, unknown>).startTime;
     expect(runAudit([item], tightConfig()).hasHardFailure).toBe(true);
   });
 });

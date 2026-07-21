@@ -10,7 +10,7 @@
  * never compare the ISO strings lexically or hand-roll offsets (primer §6, constraints).
  */
 
-import type { CapacityStatus, SignupMode } from "../normalise/types.ts";
+import type { CapacityStatus, SignupMode } from "@ropecon/program-core";
 
 /** "starting within one hour" — the joinable-soon window length (primer §6). */
 export const JOINABLE_WINDOW_MS = 60 * 60 * 1000;

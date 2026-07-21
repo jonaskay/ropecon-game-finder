@@ -1,8 +1,17 @@
 node_modules/
+.env
+.env.*
+!.env.example
+*credentials*.json
+*service-account*.json
 
 # Local Astro build folders
 .astro/
 dist/
+**/.astro/
+**/dist/
 
 # Local Netlify folder
-.netlify
+.netlify/
+**/.netlify/
+.DS_Store

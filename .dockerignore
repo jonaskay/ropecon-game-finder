@@ -1,0 +1,11 @@
+.git
+**/dist
+**/.astro
+**/.netlify
+**/node_modules
+.env*
+**/*credentials*.json
+**/*service-account*.json
+apps/web
+fixtures
+docs

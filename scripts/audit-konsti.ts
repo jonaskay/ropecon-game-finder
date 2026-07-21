@@ -16,11 +16,14 @@
  */
 
 import { readFileSync } from "node:fs";
-import { fetchProjectedItems, projectResponse } from "../src/konsti/fetch.ts";
-import type { ProjectedItem } from "../src/konsti/schema.ts";
-import { runAudit } from "../src/audit/run.ts";
-import { renderReport } from "../src/audit/report.ts";
-import { scanForPii } from "../src/audit/checks.ts";
+import {
+  fetchProjectedItems,
+  projectResponse,
+  renderReport,
+  runAudit,
+  scanForPii,
+  type ProjectedItem,
+} from "@ropecon/program-core";
 
 const DEFAULT_FIXTURE = "fixtures/konsti-sample.synthetic.json";
 
@@ -80,7 +83,7 @@ async function main(): Promise<void> {
     if (allFindings.length > 0) {
       console.error(
         `\naudit:check FAILED — ${allFindings.length} finding(s) against ${args.live ? "live data" : args.fixture}. ` +
-          `Every value in the fixture must be reviewed; encode the decision in src/config/* and update the fixture.`,
+          `Every value in the fixture must be reviewed; encode the decision in packages/program-core/src/config/* and update the fixture.`,
       );
       process.exit(1);
     }

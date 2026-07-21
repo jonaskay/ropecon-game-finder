@@ -1,0 +1,61 @@
+---
+const programUrl = import.meta.env.PUBLIC_PROGRAM_DATA_URL;
+if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="program-data-url" content={programUrl} />
+    <title>Ropecon Game Finder</title>
+  </head>
+  <body>
+    <header><h1>Ropecon Game Finder</h1><p id="status">Loading the latest program…</p></header>
+    <main id="program" aria-live="polite"></main>
+    <noscript>This finder needs JavaScript to load the program from its published data service.</noscript>
+    <script>
+      import type { ProgramItem } from "@ropecon/program-core";
+      import { loadProgramData, localStorageProgramCache } from "../program/load.ts";
+
+      const status = document.querySelector<HTMLElement>("#status")!;
+      const root = document.querySelector<HTMLElement>("#program")!;
+      const url = document.querySelector<HTMLMetaElement>('meta[name="program-data-url"]')!.content;
+      const esc = (text: string) => text.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
+      const stamp = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Helsinki", dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
+      const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Helsinki", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+      const renderItem = (item: ProgramItem) => `<li class="session ${item.isCancelled ? "cancelled" : ""}">
+        <div><time>${time(item.start)}–${time(item.end)}</time> <strong>${esc(item.title)}</strong>
+        ${item.isCancelled ? '<span class="badge">Cancelled</span>' : ""}</div>
+        <p>${esc(item.shortDescription)}</p><small>${esc(item.location || "Location TBA")} · ${esc(item.signupMode === "none" ? "Walk in" : item.signupMode === "konsti" ? "Signup in Konsti" : "Signup on site")}</small></li>`;
+
+      const result = await loadProgramData({ url, cache: localStorageProgramCache() });
+      if (result.status === "unavailable-first-run") {
+        status.textContent = "Program unavailable";
+        root.innerHTML = '<p class="notice">The program cannot be loaded right now. Connect to the internet and reload; after one successful visit it remains available offline.</p>';
+      } else {
+        const cacheNote = result.status === "ready-cache" ? " · offline cached copy" : "";
+        status.textContent = `${result.data.items.length} gaming sessions · updated ${stamp(result.data.generatedAt)}${cacheNote}`;
+        if (result.status === "ready-cache" && result.stale) root.innerHTML = '<p class="notice">This cached program may be stale. Check Konsti before relying on availability.</p>';
+        const groups = new Map<string, ProgramItem[]>();
+        for (const item of [...result.data.items].sort((a,b) => a.start.localeCompare(b.start))) {
+          const group = groups.get(item.day);
+          if (group) group.push(item); else groups.set(item.day, [item]);
+        }
+        root.innerHTML += [...groups].map(([day, items]) => `<section><h2>${esc(day)}</h2><ul>${items.map(renderItem).join("")}</ul></section>`).join("");
+      }
+      if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js");
+    </script>
+  </body>
+</html>
+
+<style>
+  :root { font-family: system-ui, sans-serif; color: #191919; --accent:#7a1f2b; }
+  body { max-width: 48rem; margin:auto; padding:1.5rem 1rem 4rem; line-height:1.45; }
+  h1 { color:var(--accent); margin-bottom:.2rem; } header p { color:#666; margin-top:0; }
+  h2 { font-size:1.1rem; border-bottom:2px solid #ddd; padding-bottom:.3rem; margin-top:2rem; }
+  ul { list-style:none; padding:0; } .session { padding:.8rem 0; border-bottom:1px solid #ddd; }
+  .session p { margin:.3rem 0; } .cancelled { opacity:.6; } .cancelled strong { text-decoration:line-through; }
+  .badge,.notice { color:var(--accent); background:#fbe3e3; padding:.2rem .45rem; margin-left:.4rem; border-radius:.25rem; }
+  .notice { margin-left:0; padding:.7rem; } time,small { color:#666; }
+</style>

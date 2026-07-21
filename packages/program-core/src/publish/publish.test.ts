@@ -16,7 +16,7 @@ import { normalise } from "../normalise/normalise.ts";
 import { toProgramData } from "./program-data.ts";
 import { buildProgram } from "./publish.ts";
 
-const FIXTURE_PATH = "fixtures/konsti-sample.synthetic.json";
+const FIXTURE_PATH = "../../fixtures/konsti-sample.synthetic.json";
 const fixtureItems = projectResponse(JSON.parse(readFileSync(FIXTURE_PATH, "utf8")));
 const STAMP = "2026-07-21T09:30:00.000Z";
 

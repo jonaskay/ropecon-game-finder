@@ -13,7 +13,7 @@ import { projectResponse } from "../konsti/fetch.ts";
 import type { KonstiProgramItem, ProjectedItem } from "../konsti/schema.ts";
 import { normalise } from "./normalise.ts";
 
-const FIXTURE_PATH = "fixtures/konsti-sample.synthetic.json";
+const FIXTURE_PATH = "../../fixtures/konsti-sample.synthetic.json";
 const fixtureItems = projectResponse(JSON.parse(readFileSync(FIXTURE_PATH, "utf8")));
 const items = normalise(fixtureItems);
 const bySlug = Object.fromEntries(items.map((i) => [i.slug, i]));

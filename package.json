@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "audit:report": "bun scripts/audit-konsti.ts report",
+    "audit:check": "bun scripts/audit-konsti.ts check",
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",

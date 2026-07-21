@@ -1,18 +1,261 @@
 ---
-// Welcome to Astro! Everything between these triple-dash code fences
-// is your "component frontmatter". It never runs in the browser.
-console.log("This runs in your terminal, not the browser!");
+/**
+ * Step 5 — static render proof (handoff §"Step 5").
+ *
+ * Renders the full gaming list end to end from the baked `program.json`: title,
+ * time (Europe/Helsinki), location, signup mode, cancellation, capacity state.
+ * No filtering yet — that's Step 6. The page reads ONLY `program.json` (client
+ * contract, handoff Step 4) — never the raw Konsti response.
+ *
+ * The envelope is read at build time from `public/program.json` (the artifact
+ * `scripts/build-program.ts` bakes), so this is a purely static render.
+ */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { ProgramData, ProgramItem } from "../normalise/types.ts";
+
+// Read the baked artifact from the project root (cwd is stable during build,
+// unlike import.meta.url which points at the bundled chunk).
+const programPath = resolve(process.cwd(), "public/program.json");
+const program = JSON.parse(readFileSync(programPath, "utf8")) as ProgramData;
+
+// Europe/Helsinki display formatters (UTC instants in, con-local strings out).
+const dayHeadingFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Helsinki",
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+const timeFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Helsinki",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+const stampFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Helsinki",
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+const dayHeading = (day: string) => dayHeadingFmt.format(new Date(`${day}T12:00:00Z`));
+const timeRange = (start: string, end: string) =>
+  `${timeFmt.format(new Date(start))}–${timeFmt.format(new Date(end))}`;
+
+function signupLabel(item: ProgramItem): string {
+  switch (item.signupMode) {
+    case "none":
+      return "No signup needed";
+    case "konsti":
+      return item.signupStrategy === "lottery" ? "Konsti lottery" : "Konsti signup";
+    case "physical": {
+      const loc = item.physicalSignupLocation;
+      return loc ? loc.labelEn : "Signup at the info desk";
+    }
+  }
+}
+
+function capacityLabel(item: ProgramItem): string | null {
+  switch (item.capacityStatus) {
+    case "not-applicable":
+      return null;
+    case "available":
+      return item.remainingSeats != null
+        ? `${item.remainingSeats} of ${item.maxAttendance} seats left`
+        : "Seats available";
+    case "full":
+      return "Full";
+    case "unknown":
+      return "Capacity unknown";
+  }
+}
+
+// Sort by start, then group into day sections for the render.
+const sorted = [...program.items].sort((a, b) => a.start.localeCompare(b.start));
+const days: { day: string; items: ProgramItem[] }[] = [];
+for (const item of sorted) {
+  const bucket = days.find((d) => d.day === item.day);
+  if (bucket) bucket.items.push(item);
+  else days.push({ day: item.day, items: [item] });
+}
+
+const generatedAt = stampFmt.format(new Date(program.generatedAt));
 ---
 
-<!-- Below is your "component template." It's just HTML, but with
-    some magic sprinkled in to help you build great templates. -->
-<html>
-    <body>
-        <h1>Hello, World!</h1>
-    </body>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ropecon Game Finder</title>
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Ropecon Game Finder</h1>
+      <p class="meta">
+        {program.items.length} gaming sessions · program as of {generatedAt} (Helsinki)
+      </p>
+    </header>
+
+    <main>
+      {
+        days.map((group) => (
+          <section class="day">
+            <h2>{dayHeading(group.day)}</h2>
+            <ul class="sessions">
+              {group.items.map((item) => (
+                <li class:list={["session", { cancelled: item.isCancelled }]}>
+                  <div class="session-head">
+                    <span class="time">{timeRange(item.start, item.end)}</span>
+                    <h3 class="title">{item.title}</h3>
+                    {item.isCancelled && <span class="badge cancelled-badge">Cancelled</span>}
+                  </div>
+                  {item.shortDescription && (
+                    <p class="short">{item.shortDescription}</p>
+                  )}
+                  <dl class="facts">
+                    <div>
+                      <dt>Location</dt>
+                      <dd>{item.location || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>Signup</dt>
+                      <dd>
+                        {signupLabel(item)}
+                        {item.signupMode === "konsti" && item.signupUrl && (
+                          <>
+                            {" "}
+                            <a href={item.signupUrl} rel="noopener">
+                              open in Konsti
+                            </a>
+                          </>
+                        )}
+                      </dd>
+                    </div>
+                    {capacityLabel(item) && (
+                      <div>
+                        <dt>Capacity</dt>
+                        <dd>{capacityLabel(item)}</dd>
+                      </div>
+                    )}
+                  </dl>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
+      }
+    </main>
+  </body>
 </html>
+
 <style>
-    h1 {
-        color: orange;
-    }
+  :root {
+    --fg: #1a1a1a;
+    --muted: #666;
+    --line: #e2e2e2;
+    --accent: #7a1f2b;
+  }
+
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    color: var(--fg);
+    line-height: 1.4;
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 4rem;
+  }
+
+  .page-header h1 {
+    margin: 0 0 0.25rem;
+    color: var(--accent);
+  }
+
+  .meta {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .day h2 {
+    font-size: 1.1rem;
+    margin: 2rem 0 0.5rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 2px solid var(--line);
+  }
+
+  .sessions {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .session {
+    padding: 0.9rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .session.cancelled {
+    opacity: 0.6;
+  }
+
+  .session-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .time {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-size: 0.9rem;
+    min-width: 6.5rem;
+  }
+
+  .title {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .session.cancelled .title {
+    text-decoration: line-through;
+  }
+
+  .badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0.1rem 0.4rem;
+    border-radius: 0.25rem;
+  }
+
+  .cancelled-badge {
+    background: #fbe3e3;
+    color: var(--accent);
+  }
+
+  .short {
+    margin: 0.4rem 0 0.5rem;
+    color: var(--fg);
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.15rem 0.75rem;
+    margin: 0;
+    font-size: 0.9rem;
+  }
+
+  .facts > div {
+    display: contents;
+  }
+
+  .facts dt {
+    color: var(--muted);
+  }
+
+  .facts dd {
+    margin: 0;
+  }
 </style>

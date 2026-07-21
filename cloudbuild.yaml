@@ -8,3 +8,5 @@ steps:
 # Deploy image to Cloud Run
 images:
 - 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image'
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -254,6 +254,40 @@
         "signupStrategy": "direct"
       },
       "users": [{ "username": "synthLima", "signupMessage": "synthetic note 12" }]
+    },
+    {
+      "programItem": {
+        "programItemId": "pi-008",
+        "parentId": "pi-008",
+        "title": "Open Board Game Library",
+        "description": "A synthetic gaming item with no signup (notRequired) and revolving-door access — walk in any time.",
+        "location": "Hall A",
+        "startTime": "2026-07-25T10:00:00Z",
+        "mins": 480,
+        "tags": ["beginnerFriendly"],
+        "ageGroups": ["everyone"],
+        "genres": [],
+        "styles": ["light"],
+        "languages": ["languageFree"],
+        "endTime": "2026-07-25T18:00:00Z",
+        "people": "Library Synthetic",
+        "minAttendance": 0,
+        "maxAttendance": 0,
+        "gameSystem": "",
+        "popularity": "high",
+        "shortDescription": "Borrow a game and grab a table — no signup, drop in whenever.",
+        "revolvingDoor": true,
+        "programType": "otherGaming",
+        "contentWarnings": "",
+        "otherAuthor": "",
+        "accessibilityValues": ["noMovement"],
+        "otherAccessibilityInformation": "",
+        "entryFee": "",
+        "signupType": "notRequired",
+        "state": "accepted",
+        "signupStrategy": "direct"
+      },
+      "users": []
     }
   ]
 }

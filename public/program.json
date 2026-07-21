@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-21T08:31:15.151Z",
+  "generatedAt": "2026-07-21T09:01:24.552Z",
   "source": "konsti",
   "items": [
     {
@@ -266,6 +266,57 @@
       "joinedCount": 1,
       "remainingSeats": 7,
       "isFull": false
+    },
+    {
+      "slug": "pi-008",
+      "parentId": "pi-008",
+      "title": "Open Board Game Library",
+      "shortDescription": "Borrow a game and grab a table — no signup, drop in whenever.",
+      "description": "A synthetic gaming item with no signup (notRequired) and revolving-door access — walk in any time.",
+      "start": "2026-07-25T10:00:00Z",
+      "end": "2026-07-25T18:00:00Z",
+      "durationMinutes": 480,
+      "location": "Hall A",
+      "people": "Library Synthetic",
+      "otherAuthor": "",
+      "state": "accepted",
+      "isCancelled": false,
+      "programType": "otherGaming",
+      "isGaming": true,
+      "tags": [
+        "beginnerFriendly"
+      ],
+      "genres": [],
+      "styles": [
+        "light"
+      ],
+      "languages": [
+        "languageFree"
+      ],
+      "ageGroups": [
+        "everyone"
+      ],
+      "gameSystem": "",
+      "contentWarnings": "",
+      "accessibilityValues": [
+        "noMovement"
+      ],
+      "otherAccessibilityInformation": "",
+      "entryFee": "",
+      "day": "2026-07-25",
+      "isPreConventionWeek": false,
+      "isRevolvingDoor": true,
+      "signupType": "notRequired",
+      "signupMode": "none",
+      "signupStrategy": "direct",
+      "requiresSignup": false,
+      "signupUrl": null,
+      "physicalSignupLocation": null,
+      "capacityStatus": "not-applicable",
+      "maxAttendance": null,
+      "joinedCount": null,
+      "remainingSeats": null,
+      "isFull": null
     }
   ]
 }

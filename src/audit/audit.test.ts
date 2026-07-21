@@ -134,7 +134,7 @@ describe("enumeration correctness (plan §8)", () => {
       tabletopRPG: 2,
       larp: 1,
       workshop: 1,
-      otherGaming: 1,
+      otherGaming: 2,
       other: 1,
       tournament: 1,
     });
@@ -142,7 +142,7 @@ describe("enumeration correctness (plan §8)", () => {
 
   it("flattens array categoricals into distinct elements", () => {
     const tags = Object.fromEntries(e.tags.map((v) => [v.value, v.count]));
-    expect(tags).toEqual({ beginnerFriendly: 2, theme: 4, lgbt: 1, preConventionWeek: 1, usesGenAi: 1 });
+    expect(tags).toEqual({ beginnerFriendly: 3, theme: 4, lgbt: 1, preConventionWeek: 1, usesGenAi: 1 });
   });
 
   it("attaches example titles", () => {
@@ -152,17 +152,17 @@ describe("enumeration correctness (plan §8)", () => {
 
   it("computes distinct days in Europe/Helsinki", () => {
     const days = Object.fromEntries(e.days.map((v) => [v.value, v.count]));
-    expect(days).toEqual({ "2026-07-24": 2, "2026-07-25": 3, "2026-07-26": 1, "2026-07-20": 1 });
+    expect(days).toEqual({ "2026-07-24": 2, "2026-07-25": 4, "2026-07-26": 1, "2026-07-20": 1 });
   });
 
   it("records programItemId uniqueness and parentId grouping facts (self-parenting is normal)", () => {
-    expect(e.structural.distinctProgramItemIds).toBe(7);
+    expect(e.structural.distinctProgramItemIds).toBe(8);
     expect(e.structural.duplicateProgramItemIds).toEqual([]);
     expect(e.structural.parentGroups).toEqual({
       emptyParentIdCount: 0,
-      selfParentCount: 5,
-      groupCount: 6,
-      singletonGroupCount: 5,
+      selfParentCount: 6,
+      groupCount: 7,
+      singletonGroupCount: 6,
       largestGroupSize: 2,
     });
   });

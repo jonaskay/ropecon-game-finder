@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyJoinableSoon,
   classifyOverlap,
+  isWalkInNow,
   JOINABLE_WINDOW_MS,
   resolveNow,
   type TimeWindowInput,
@@ -128,6 +129,42 @@ describe("classifyJoinableSoon", () => {
   it("excludes a session outside the window", () => {
     const r = classifyJoinableSoon(item({ start: at(120), end: at(180) }), NOW);
     expect(r).toMatchObject({ included: false, reason: "no-overlap" });
+  });
+});
+
+describe("isWalkInNow", () => {
+  const walkIn = (overrides: Partial<TimeWindowInput> = {}) =>
+    item({ signupMode: "none", capacityStatus: "not-applicable", ...overrides });
+
+  it("includes a no-signup game currently running", () => {
+    expect(isWalkInNow(walkIn({ start: at(-30), end: at(90) }), NOW)).toBe(true);
+  });
+
+  it("includes a walk-in that starts exactly now", () => {
+    expect(isWalkInNow(walkIn({ start: at(0), end: at(60) }), NOW)).toBe(true);
+  });
+
+  it("excludes a walk-in that has not started yet", () => {
+    expect(isWalkInNow(walkIn({ start: at(10), end: at(70) }), NOW)).toBe(false);
+  });
+
+  it("excludes a walk-in that has already ended", () => {
+    expect(isWalkInNow(walkIn({ start: at(-120), end: at(-10) }), NOW)).toBe(false);
+  });
+
+  it("excludes an ongoing session that requires signup", () => {
+    expect(isWalkInNow(item({ start: at(-30), end: at(90), signupMode: "konsti" }), NOW)).toBe(
+      false,
+    );
+    expect(
+      isWalkInNow(item({ start: at(-30), end: at(90), signupMode: "physical" }), NOW),
+    ).toBe(false);
+  });
+
+  it("excludes a cancelled walk-in", () => {
+    expect(isWalkInNow(walkIn({ start: at(-30), end: at(90), isCancelled: true }), NOW)).toBe(
+      false,
+    );
   });
 });
 

@@ -59,7 +59,14 @@ const only = (over: Partial<KonstiProgramItem>, userCount = 0) =>
 
 describe("gaming filter (primer §5.3)", () => {
   it("keeps only gaming program types, dropping workshop/other", () => {
-    expect(items.map((i) => i.slug)).toEqual(["pi-001", "pi-002", "pi-004", "pi-005", "pi-007"]);
+    expect(items.map((i) => i.slug)).toEqual([
+      "pi-001",
+      "pi-002",
+      "pi-004",
+      "pi-005",
+      "pi-007",
+      "pi-008",
+    ]);
     expect(items.every((i) => i.isGaming)).toBe(true);
     // pi-003 (workshop) and pi-006 (other) are the two non-gaming rows in the fixture.
     expect(bySlug["pi-003"]).toBeUndefined();

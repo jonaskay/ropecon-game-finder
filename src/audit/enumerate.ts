@@ -18,6 +18,7 @@ import {
   KNOWN_PROGRAM_ITEM_KEYS,
   type ProjectedItem,
 } from "../konsti/schema.ts";
+import { helsinkiDay } from "../konsti/time.ts";
 import { PRE_CONVENTION_WEEK_TAG, TIER2_ARRAY_FIELDS } from "../config/taxonomy.ts";
 
 const MAX_EXAMPLES = 3;
@@ -113,20 +114,6 @@ class Counter {
       .map(([value, entry]) => ({ value, count: entry.count, examples: entry.examples }))
       .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
   }
-}
-
-const HELSINKI_DAY_FMT = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Europe/Helsinki",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-/** Europe/Helsinki calendar day (YYYY-MM-DD) for a UTC instant, or null if unparseable. */
-function helsinkiDay(iso: string): string | null {
-  const instant = new Date(iso);
-  if (Number.isNaN(instant.getTime())) return null;
-  return HELSINKI_DAY_FMT.format(instant);
 }
 
 function isUtcTimestamp(value: unknown): boolean {

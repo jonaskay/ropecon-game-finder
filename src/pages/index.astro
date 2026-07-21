@@ -141,10 +141,20 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
           <button type="button" class="view-btn" data-view="walkins" aria-pressed="false">
             Open now (walk-ins)
           </button>
+          <button type="button" class="view-btn" data-view="slot" aria-pressed="false">
+            My time slot
+          </button>
           <button type="button" class="view-btn" data-view="all" aria-pressed="false">
             All sessions
           </button>
         </div>
+        <fieldset class="slot-picker" hidden>
+          <legend>When are you free? (Helsinki time)</legend>
+          <label>From <input type="datetime-local" data-slot-from /></label>
+          <label>To <input type="datetime-local" data-slot-to /></label>
+          <button type="button" class="slot-apply">Show games</button>
+          <p class="slot-error" role="alert" hidden></p>
+        </fieldset>
         <p class="result-count" aria-live="polite"></p>
       </div>
       <p class="now-notice" hidden></p>
@@ -243,14 +253,17 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
    * "Open now (walk-ins)" view over the same pure classifiers.
    */
   import {
+    classifyInWindow,
     classifyJoinableSoon,
     isWalkInNow,
     resolveNow,
+    resolveWindow,
     type TimeWindowInput,
   } from "../classify/window.ts";
   import { classifyFreshness } from "../classify/freshness.ts";
+  import { helsinkiWallClockToMs } from "../konsti/time.ts";
 
-  type View = "soon" | "walkins" | "all";
+  type View = "soon" | "walkins" | "slot" | "all";
 
   const sessions = [...document.querySelectorAll<HTMLLIElement>(".session")].map((el) => ({
     el,
@@ -270,15 +283,41 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
   const nowNotice = document.querySelector<HTMLElement>(".now-notice");
   const staleNotice = document.querySelector<HTMLElement>(".stale-notice");
   const viewButtons = [...document.querySelectorAll<HTMLButtonElement>(".view-btn")];
+  const slotPicker = document.querySelector<HTMLFieldSetElement>(".slot-picker");
+  const slotFrom = document.querySelector<HTMLInputElement>("[data-slot-from]");
+  const slotTo = document.querySelector<HTMLInputElement>("[data-slot-to]");
+  const slotApply = document.querySelector<HTMLButtonElement>(".slot-apply");
+  const slotError = document.querySelector<HTMLElement>(".slot-error");
 
   const params = new URLSearchParams(location.search);
   const { nowMs, overridden } = resolveNow(params.get("now"), Date.now());
+  const hasWindowParams = params.has("from") || params.has("to");
 
   const notationFmt = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Helsinki",
     dateStyle: "medium",
     timeStyle: "short",
   });
+  const inputFmt = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Helsinki",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const toInputValue = (ms: number) => inputFmt.format(ms).replace(" ", "T");
+
+  let selectedWindow = resolveWindow(params.get("from"), params.get("to"), nowMs);
+  if (selectedWindow.active && slotFrom && slotTo) {
+    slotFrom.value = toInputValue(selectedWindow.fromMs);
+    slotTo.value = toInputValue(selectedWindow.toMs);
+  }
+  if (hasWindowParams && !selectedWindow.active && slotError) {
+    slotError.hidden = false;
+    slotError.textContent = "Choose a valid end time after now and after the start time.";
+  }
 
   function ensureBadge(el: HTMLLIElement): HTMLSpanElement {
     let badge = el.querySelector<HTMLSpanElement>(".window-badge");
@@ -354,6 +393,33 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
         (shown) => (shown === 0 ? "No walk-in games open now" : `${shown} open for walk-ins now`),
         "No walk-in games are running right now. Try Joinable soon or All sessions.",
       );
+    } else if (view === "slot") {
+      if (!selectedWindow.active) {
+        applyFilter(
+          () => ({ included: false, badge: null }),
+          () => "Choose a valid time slot",
+          "Choose an end time after the start time.",
+        );
+        return;
+      }
+      applyFilter(
+        (input) => {
+          const { included, overlap } = classifyInWindow(
+            input,
+            selectedWindow.fromMs,
+            selectedWindow.toMs,
+          );
+          return {
+            included,
+            badge: included ? windowLabel(overlap, Date.parse(input.start)) : null,
+          };
+        },
+        (shown) =>
+          shown === 0
+            ? "No joinable sessions in this time slot"
+            : `${shown} joinable in your time slot`,
+        "Nothing joinable in this time slot. Try another time or All sessions.",
+      );
     } else {
       applyFilter(
         (input) => {
@@ -373,14 +439,46 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
     for (const btn of viewButtons) {
       btn.setAttribute("aria-pressed", String(btn.dataset.view === view));
     }
+    if (slotPicker) slotPicker.hidden = view !== "slot";
     render(view);
+  }
+
+  function applySelectedWindow(): void {
+    const pickedFrom = slotFrom?.value ? helsinkiWallClockToMs(slotFrom.value) : nowMs;
+    const pickedTo = slotTo?.value ? helsinkiWallClockToMs(slotTo.value) : Number.NaN;
+    selectedWindow = resolveWindow(
+      Number.isNaN(pickedFrom) ? null : new Date(pickedFrom).toISOString(),
+      Number.isNaN(pickedTo) ? null : new Date(pickedTo).toISOString(),
+      nowMs,
+    );
+    if (slotError) {
+      slotError.hidden = selectedWindow.active;
+      slotError.textContent = "Choose a valid end time after now and after the start time.";
+    }
+    if (selectedWindow.active) {
+      params.set("from", new Date(selectedWindow.fromMs).toISOString());
+      params.set("to", new Date(selectedWindow.toMs).toISOString());
+      history.replaceState(null, "", `${location.pathname}?${params}${location.hash}`);
+    }
+    render("slot");
   }
 
   // Reveal the JS-only controls and wire them up.
   controls?.removeAttribute("hidden");
   for (const btn of viewButtons) {
-    btn.addEventListener("click", () => setView(btn.dataset.view as View));
+    btn.addEventListener("click", () => {
+      const view = btn.dataset.view as View;
+      if (view === "slot" && slotFrom && slotTo && !slotTo.value) {
+        slotFrom.value = toInputValue(nowMs);
+        slotTo.value = toInputValue(nowMs + 2 * 60 * 60_000);
+        applySelectedWindow();
+      }
+      setView(view);
+    });
   }
+  slotApply?.addEventListener("click", applySelectedWindow);
+  slotFrom?.addEventListener("change", applySelectedWindow);
+  slotTo?.addEventListener("change", applySelectedWindow);
   if (overridden && nowNotice) {
     nowNotice.hidden = false;
     nowNotice.textContent = `Testing as if it were ${notationFmt.format(nowMs)} (Helsinki) · ?now= override active`;
@@ -403,7 +501,7 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
     }
   }
 
-  setView("soon");
+  setView(selectedWindow.active || hasWindowParams ? "slot" : "soon");
 </script>
 
 <style>
@@ -504,6 +602,45 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
     align-items: center;
     gap: 0.75rem;
     margin-top: 0.75rem;
+  }
+
+  .slot-picker {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+  }
+
+  .slot-picker[hidden] {
+    display: none;
+  }
+
+  .slot-picker legend,
+  .slot-picker label {
+    font-size: 0.85rem;
+  }
+
+  .slot-picker label {
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .slot-picker input,
+  .slot-apply {
+    font: inherit;
+    padding: 0.3rem 0.45rem;
+  }
+
+  .slot-error {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--accent);
+    font-size: 0.85rem;
   }
 
   .views {

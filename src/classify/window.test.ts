@@ -9,11 +9,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  classifyInWindow,
   classifyJoinableSoon,
   classifyOverlap,
   isWalkInNow,
   JOINABLE_WINDOW_MS,
   resolveNow,
+  resolveWindow,
   type TimeWindowInput,
 } from "./window.ts";
 
@@ -132,6 +134,36 @@ describe("classifyJoinableSoon", () => {
   });
 });
 
+describe("classifyInWindow", () => {
+  it("keeps a revolving session running at the future window start", () => {
+    expect(
+      classifyInWindow(
+        item({ start: at(10), end: at(180), isRevolvingDoor: true }),
+        NOW + 60 * 60_000,
+        NOW + 120 * 60_000,
+      ),
+    ).toEqual({ included: true, overlap: "join-in-progress", reason: null });
+  });
+
+  it("drops cancelled and full Konsti sessions", () => {
+    expect(classifyInWindow(item({ isCancelled: true }), NOW, NOW + 60 * 60_000).reason).toBe(
+      "cancelled",
+    );
+    expect(classifyInWindow(item({ capacityStatus: "full" }), NOW, NOW + 60 * 60_000).reason).toBe(
+      "konsti-full",
+    );
+  });
+
+  it("uses strict window boundaries", () => {
+    expect(classifyInWindow(item({ start: at(60) }), NOW, NOW + 60 * 60_000).included).toBe(
+      false,
+    );
+    expect(
+      classifyInWindow(item({ start: at(-60), end: at(0) }), NOW, NOW + 60 * 60_000).included,
+    ).toBe(false);
+  });
+});
+
 describe("isWalkInNow", () => {
   const walkIn = (overrides: Partial<TimeWindowInput> = {}) =>
     item({ signupMode: "none", capacityStatus: "not-applicable", ...overrides });
@@ -182,5 +214,34 @@ describe("resolveNow", () => {
 
   it("falls back to the device clock when ?now= is unparseable", () => {
     expect(resolveNow("not-a-date", fallback)).toEqual({ nowMs: fallback, overridden: false });
+  });
+});
+
+describe("resolveWindow", () => {
+  it("resolves a valid window and clamps a past start to now", () => {
+    expect(resolveWindow(at(-30), at(60), NOW)).toEqual({
+      fromMs: NOW,
+      toMs: NOW + 60 * 60_000,
+      active: true,
+    });
+  });
+
+  it("uses now when from is missing or invalid", () => {
+    expect(resolveWindow(null, at(60), NOW)).toEqual({
+      fromMs: NOW,
+      toMs: NOW + 60 * 60_000,
+      active: true,
+    });
+    expect(resolveWindow("bad", at(60), NOW).fromMs).toBe(NOW);
+  });
+
+  it("is inactive for missing or invalid parameters", () => {
+    expect(resolveWindow(null, null, NOW).active).toBe(false);
+    expect(resolveWindow(at(10), "bad", NOW).active).toBe(false);
+  });
+
+  it("is inactive when to is at or before the clamped from", () => {
+    expect(resolveWindow(at(-60), at(-1), NOW).active).toBe(false);
+    expect(resolveWindow(at(30), at(30), NOW).active).toBe(false);
   });
 });

@@ -55,14 +55,14 @@ export interface JoinableResult {
 }
 
 /**
- * Joinable-soon default (primer §6): within `[now, now + 1h]`, include sessions that are
- * startable or joinable-in-progress, EXCEPT cancelled ones and online-Konsti sessions
- * known full. Physical-signup and unknown-capacity sessions stay visible (a guest may
- * still get a place at the desk / the count just isn't live). Already-started
- * non-revolving items are hidden by default.
+ * Apply the actionable exclusions to an arbitrary `[fromMs, toMs)` window.
  */
-export function classifyJoinableSoon(item: TimeWindowInput, nowMs: number): JoinableResult {
-  const overlap = classifyOverlap(item, nowMs, nowMs + JOINABLE_WINDOW_MS);
+export function classifyInWindow(
+  item: TimeWindowInput,
+  fromMs: number,
+  toMs: number,
+): JoinableResult {
+  const overlap = classifyOverlap(item, fromMs, toMs);
   if (overlap === "none") return { included: false, overlap, reason: "no-overlap" };
   if (overlap === "in-progress-no-join")
     return { included: false, overlap, reason: "in-progress-no-join" };
@@ -70,6 +70,17 @@ export function classifyJoinableSoon(item: TimeWindowInput, nowMs: number): Join
   if (item.signupMode === "konsti" && item.capacityStatus === "full")
     return { included: false, overlap, reason: "konsti-full" };
   return { included: true, overlap, reason: null };
+}
+
+/**
+ * Joinable-soon default (primer §6): within `[now, now + 1h]`, include sessions that are
+ * startable or joinable-in-progress, EXCEPT cancelled ones and online-Konsti sessions
+ * known full. Physical-signup and unknown-capacity sessions stay visible (a guest may
+ * still get a place at the desk / the count just isn't live). Already-started
+ * non-revolving items are hidden by default.
+ */
+export function classifyJoinableSoon(item: TimeWindowInput, nowMs: number): JoinableResult {
+  return classifyInWindow(item, nowMs, nowMs + JOINABLE_WINDOW_MS);
 }
 
 /**
@@ -101,4 +112,23 @@ export function resolveNow(nowParam: string | null, fallbackMs: number): Resolve
     if (!Number.isNaN(parsed)) return { nowMs: parsed, overridden: true };
   }
   return { nowMs: fallbackMs, overridden: false };
+}
+
+export interface ResolvedWindow {
+  fromMs: number;
+  toMs: number;
+  active: boolean;
+}
+
+/** Resolve a shareable window, clamping its start to now so the past is never joinable. */
+export function resolveWindow(
+  fromParam: string | null,
+  toParam: string | null,
+  nowMs: number,
+): ResolvedWindow {
+  const parsedFrom = fromParam ? Date.parse(fromParam) : Number.NaN;
+  const parsedTo = toParam ? Date.parse(toParam) : Number.NaN;
+  const fromMs = Math.max(Number.isNaN(parsedFrom) ? nowMs : parsedFrom, nowMs);
+  const toMs = Number.isNaN(parsedTo) ? fromMs : parsedTo;
+  return { fromMs, toMs, active: toMs > fromMs };
 }

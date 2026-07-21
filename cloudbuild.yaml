@@ -1,0 +1,10 @@
+steps:
+# Build the image
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image', './apps/program-refresh']
+# Push the image to Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image']
+# Deploy image to Cloud Run
+images:
+- 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image'

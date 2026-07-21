@@ -148,6 +148,11 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
         <p class="result-count" aria-live="polite"></p>
       </div>
       <p class="now-notice" hidden></p>
+      {/* Step 9: revealed by the client script when the snapshot is > 15 min old. The
+          static "as of" stamp above is always shown; this warns near the action UI only
+          when availability/cancellation may have drifted. `generatedAt` is baked here so
+          the client can age it against the resolved (possibly `?now=`) clock. */}
+      <p class="stale-notice" role="alert" data-generated-at={program.generatedAt} hidden></p>
     </header>
 
     <main>
@@ -243,6 +248,7 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
     resolveNow,
     type TimeWindowInput,
   } from "../classify/window.ts";
+  import { classifyFreshness } from "../classify/freshness.ts";
 
   type View = "soon" | "walkins" | "all";
 
@@ -262,6 +268,7 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
   const countEl = document.querySelector<HTMLElement>(".result-count");
   const emptyEl = document.querySelector<HTMLElement>(".empty-state");
   const nowNotice = document.querySelector<HTMLElement>(".now-notice");
+  const staleNotice = document.querySelector<HTMLElement>(".stale-notice");
   const viewButtons = [...document.querySelectorAll<HTMLButtonElement>(".view-btn")];
 
   const params = new URLSearchParams(location.search);
@@ -377,6 +384,23 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
   if (overridden && nowNotice) {
     nowNotice.hidden = false;
     nowNotice.textContent = `Testing as if it were ${notationFmt.format(nowMs)} (Helsinki) · ?now= override active`;
+  }
+
+  // Step 9: warn near the action UI when the baked snapshot has aged past 15 minutes.
+  // Uses the same resolved `nowMs` as the filters, so a `?now=` past the stamp shows stale.
+  if (staleNotice) {
+    const generatedAtMs = Date.parse(staleNotice.dataset.generatedAt ?? "");
+    if (!Number.isNaN(generatedAtMs)) {
+      const { isStale, ageMinutes } = classifyFreshness(generatedAtMs, nowMs);
+      staleNotice.hidden = !isStale;
+      if (isStale) {
+        staleNotice.textContent =
+          `Heads up: this program snapshot is ${ageMinutes} minutes old ` +
+          `(as of ${notationFmt.format(generatedAtMs)}, Helsinki). ` +
+          `Seat availability and cancellations may have changed since then — ` +
+          `check Konsti before relying on a seat.`;
+      }
+    }
   }
 
   setView("soon");
@@ -522,6 +546,16 @@ const generatedAt = stampFmt.format(new Date(program.generatedAt));
     border-radius: 0.3rem;
     font-size: 0.85rem;
     color: #7a5b00;
+  }
+
+  .stale-notice {
+    margin: 0.5rem 0 0;
+    padding: 0.5rem 0.7rem;
+    background: #fbe3e3;
+    border-left: 3px solid var(--accent);
+    border-radius: 0.3rem;
+    font-size: 0.85rem;
+    color: var(--accent);
   }
 
   .empty-state {

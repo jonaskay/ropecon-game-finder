@@ -1,7 +1,8 @@
 node_modules/
 
-# Local Astro build folder
+# Local Astro build folders
 .astro/
+dist/
 
 # Local Netlify folder
 .netlify

@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "astro dev",
+    "build:program": "bun scripts/build-program.ts",
+    "prebuild": "bun scripts/build-program.ts",
     "build": "astro build",
     "preview": "astro preview",
     "audit:report": "bun scripts/audit-konsti.ts report",

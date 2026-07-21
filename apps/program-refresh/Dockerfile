@@ -3,6 +3,7 @@ WORKDIR /workspace
 COPY package.json bun.lock tsconfig.json ./
 COPY packages/program-core/package.json packages/program-core/package.json
 COPY apps/program-refresh/package.json apps/program-refresh/package.json
+COPY apps/web/package.json apps/web/package.json
 RUN bun install --frozen-lockfile
 COPY packages/program-core packages/program-core
 COPY apps/program-refresh apps/program-refresh

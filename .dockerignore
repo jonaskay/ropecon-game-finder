@@ -6,6 +6,7 @@
 .env*
 **/*credentials*.json
 **/*service-account*.json
-apps/web
+apps/web/*
+!apps/web/package.json
 fixtures
 docs

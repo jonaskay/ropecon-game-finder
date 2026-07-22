@@ -2,6 +2,9 @@
   command = "bun run build:web"
   publish = "apps/web/dist"
 
+[build.environment]
+  PUBLIC_PROGRAM_DATA_URL = https://storage.googleapis.com/ropecon-game-finder-program/program.json
+
 [[headers]]
   for = "/service-worker.js"
   [headers.values]

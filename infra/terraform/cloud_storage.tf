@@ -22,3 +22,9 @@ resource "google_storage_bucket_iam_member" "program_runner_bucket" {
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.program_runner.email}"
 }
+
+resource "google_storage_bucket_iam_member" "program_viewer_bucket" {
+  bucket = google_storage_bucket.program.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
+}

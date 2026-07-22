@@ -11,5 +11,8 @@ steps:
   args: ['run', 'jobs', 'deploy', 'program-refresh-job', '--image', '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_PROJECT_ID}-repo/program-refresh-image', '--region', '${_LOCATION}']
 images:
 - '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_PROJECT_ID}-repo/program-refresh-image'
+substitutions:
+  _PROJECT_ID: $PROJECT_ID
+  _LOCATION: $LOCATION_ID
 options:
   logging: CLOUD_LOGGING_ONLY

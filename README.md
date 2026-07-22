@@ -3,6 +3,11 @@
 A Bun workspace containing the static Astro finder, its privacy-safe program-data core,
 and the Cloud Run refresh job that publishes normalized data to Cloud Storage.
 
+## Requirements
+
+* gcloud CLI
+* Terraform
+
 ## Development
 
 ```sh
@@ -27,3 +32,7 @@ docker build -f apps/program-refresh/Dockerfile .
 
 Architecture and operating constraints are documented in
 [`docs/ropecon-gaming-finder-session-primer-v7.md`](docs/ropecon-gaming-finder-session-primer-v7.md).
+
+## Deployment
+
+Set up a GCP project.

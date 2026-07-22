@@ -1,15 +1,15 @@
 steps:
 # Build the image
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-t', 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image', '-f', 'apps/program-refresh/Dockerfile', '.']
+  args: ['build', '-t', '$LOCATION_ID-docker.pkg.dev/$PROJECT_ID/$PROJECT_ID-repo/program-refresh-image', '-f', 'apps/program-refresh/Dockerfile', '.']
 # Push the image to Artifact Registry
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image']
+  args: ['push', '$LOCATION_ID-docker.pkg.dev/$PROJECT_ID/$PROJECT_ID-repo/program-refresh-image']
 # Deploy image to Cloud Run
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
-  args: ['run', 'jobs', 'deploy', 'program-refresh-job', '--image', 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image', '--region', 'europe-north1']
+  args: ['run', 'jobs', 'deploy', 'program-refresh-job', '--image', '$LOCATION_ID-docker.pkg.dev/$PROJECT_ID/$PROJECT_ID-repo/program-refresh-image', '--region', '$LOCATION_ID']
 images:
-- 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image'
+- '$LOCATION_ID-docker.pkg.dev/$PROJECT_ID/$PROJECT_ID-repo/program-refresh-image'
 options:
   logging: CLOUD_LOGGING_ONLY

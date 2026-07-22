@@ -6,6 +6,9 @@ steps:
 - name: 'gcr.io/cloud-builders/docker'
   args: ['push', 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image']
 # Deploy image to Cloud Run
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args: ['run', 'deploy', 'job', 'program-refresh-job', '--image', 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image', '--region', 'europe-north1']
 images:
 - 'europe-north1-docker.pkg.dev/ropecon-game-finder/ropecon-game-finder-repo/program-refresh-image'
 options:

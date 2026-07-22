@@ -1,18 +1,16 @@
 steps:
 # Build the image
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-t', '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_PROJECT_ID}-repo/program-refresh-image', '-f', 'apps/program-refresh/Dockerfile', '.']
+  args: ['build', '-t', '$LOCATION-docker.pkg.dev/$PROJECT/$PROJECT-repo/program-refresh-image', '-f', 'apps/program-refresh/Dockerfile', '.']
 # Push the image to Artifact Registry
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['push', '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_PROJECT_ID}-repo/program-refresh-image']
+  args: ['push', '$LOCATION-docker.pkg.dev/$PROJECT/$PROJECT-repo/program-refresh-image']
 # Deploy image to Cloud Run
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
-  args: ['run', 'jobs', 'deploy', 'program-refresh-job', '--image', '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_PROJECT_ID}-repo/program-refresh-image', '--region', '${_LOCATION}']
+  args: ['run', 'jobs', 'deploy', 'program-refresh-job', '--image', '$LOCATION-docker.pkg.dev/$PROJECT/$PROJECT-repo/program-refresh-image', '--region', '$LOCATION']
 images:
-- '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_PROJECT_ID}-repo/program-refresh-image'
-substitutions:
-  _PROJECT_ID: $PROJECT_ID
-  _LOCATION: $LOCATION_ID
+- '$LOCATION-docker.pkg.dev/$PROJECT/$PROJECT-repo/program-refresh-image'
 options:
+  automapSubstitutions: true
   logging: CLOUD_LOGGING_ONLY

@@ -1,61 +1,781 @@
 ---
+/**
+ * Steps 5–9 — the guest-facing render (handoff §"Step 5"/§"Step 6"/§8/§9).
+ *
+ * Renders the full gaming list: title, time (Europe/Helsinki), location (linked to the
+ * convention map), signup mode with its participation affordance, cancellation, and
+ * capacity state. Step 6 adds the client-side time-window filter; Step 8 finalises the
+ * signup/participation copy (walk-in / Konsti direct-vs-lottery / physical desk), full
+ * & cancelled markers, revolving-door copy, the "Open now (walk-ins)" view, and
+ * first-run guidance; Step 9 warns when the snapshot has aged past 15 minutes.
+ *
+ * The page reads ONLY the published `program.json` client contract (handoff Step 4) —
+ * never the raw Konsti response. Since program.json is no longer baked into the build
+ * (it is published to external storage by a separate job), the page fetches it at
+ * runtime from PUBLIC_PROGRAM_DATA_URL, caches it in localStorage, and renders in the
+ * browser. A service worker keeps a previously-loaded program available offline. Copy
+ * is English-only for this first release; the config already carries `labelFi`/`labelEn`,
+ * so bilingual FI/EN is a later, additive change.
+ */
 const programUrl = import.meta.env.PUBLIC_PROGRAM_DATA_URL;
 if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="program-data-url" content={programUrl} />
     <title>Ropecon Game Finder</title>
   </head>
   <body>
-    <header><h1>Ropecon Game Finder</h1><p id="status">Loading the latest program…</p></header>
-    <main id="program" aria-live="polite"></main>
-    <noscript>This finder needs JavaScript to load the program from its published data service.</noscript>
-    <script>
-      import type { ProgramItem } from "@ropecon/program-core";
-      import { loadProgramData, localStorageProgramCache } from "../program/load.ts";
+    <header class="page-header">
+      <h1>Ropecon Game Finder</h1>
+      <p class="meta" id="status" aria-live="polite">Loading the latest program…</p>
+      <p class="intro">
+        Gaming sessions you can join, filtered to what's playable soon. This finder is
+        read-only — it never signs you up: online signups open in <strong>Konsti</strong>,
+        others are handled at a convention desk.
+      </p>
+      {/* Controls are JS-only: revealed by the client script once the program loads. */}
+      <div class="controls" hidden>
+        <div class="views" role="group" aria-label="View">
+          <button type="button" class="view-btn" data-view="soon" aria-pressed="true">
+            Joinable soon
+          </button>
+          <button type="button" class="view-btn" data-view="walkins" aria-pressed="false">
+            Open now (walk-ins)
+          </button>
+          <button type="button" class="view-btn" data-view="slot" aria-pressed="false">
+            My time slot
+          </button>
+          <button type="button" class="view-btn" data-view="all" aria-pressed="false">
+            All sessions
+          </button>
+        </div>
+        <fieldset class="slot-picker" hidden>
+          <legend>When are you free? (Helsinki time)</legend>
+          <label>From <input type="datetime-local" data-slot-from /></label>
+          <label>To <input type="datetime-local" data-slot-to /></label>
+          <button type="button" class="slot-apply">Show games</button>
+          <p class="slot-error" role="alert" hidden></p>
+        </fieldset>
+        <p class="result-count" aria-live="polite"></p>
+      </div>
+      <p class="now-notice" hidden></p>
+      {/* Step 9: revealed by the client script when the resolved snapshot is > 15 min old. */}
+      <p class="stale-notice" role="alert" hidden></p>
+    </header>
 
-      const status = document.querySelector<HTMLElement>("#status")!;
-      const root = document.querySelector<HTMLElement>("#program")!;
+    <main>
+      {/* Text is set by the client script per active view / load failure. */}
+      <p class="empty-state" hidden></p>
+      <div id="program"></div>
+    </main>
+    <noscript>This finder needs JavaScript to load the program from its published data service.</noscript>
+
+    <script>
+      /**
+       * Client runtime (Steps 5–9): fetch the published snapshot, render the full list,
+       * then filter it to a resolved "now".
+       *
+       * program.json is no longer available at build time, so the list is rendered here
+       * from the fetched data (with a localStorage cache + offline service worker) rather
+       * than server-rendered. Every field the classifier needs is written onto `data-*`
+       * attributes on each `.session`, so the same pure classifiers drive the filter
+       * views. `?now=` overrides the device clock for testing outside con dates (Step 7).
+       */
+      import type { ProgramData, ProgramItem } from "@ropecon/program-core";
+      import { conventionMapUrl, helsinkiWallClockToMs } from "@ropecon/program-core";
+      import { loadProgramData, localStorageProgramCache } from "../program/load.ts";
+      import {
+        classifyInWindow,
+        classifyJoinableSoon,
+        isWalkInNow,
+        resolveNow,
+        resolveWindow,
+        type TimeWindowInput,
+      } from "../classify/window.ts";
+      import { classifyFreshness } from "../classify/freshness.ts";
+
+      type View = "soon" | "walkins" | "slot" | "all";
+
+      // ---- Element handles -------------------------------------------------------------
+
+      const statusEl = document.querySelector<HTMLElement>("#status")!;
+      const programRoot = document.querySelector<HTMLElement>("#program")!;
+      const controls = document.querySelector<HTMLElement>(".controls");
+      const countEl = document.querySelector<HTMLElement>(".result-count");
+      const emptyEl = document.querySelector<HTMLElement>(".empty-state");
+      const nowNotice = document.querySelector<HTMLElement>(".now-notice");
+      const staleNotice = document.querySelector<HTMLElement>(".stale-notice");
+      const viewButtons = [...document.querySelectorAll<HTMLButtonElement>(".view-btn")];
+      const slotPicker = document.querySelector<HTMLFieldSetElement>(".slot-picker");
+      const slotFrom = document.querySelector<HTMLInputElement>("[data-slot-from]");
+      const slotTo = document.querySelector<HTMLInputElement>("[data-slot-to]");
+      const slotApply = document.querySelector<HTMLButtonElement>(".slot-apply");
+      const slotError = document.querySelector<HTMLElement>(".slot-error");
       const url = document.querySelector<HTMLMetaElement>('meta[name="program-data-url"]')!.content;
-      const esc = (text: string) => text.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
-      const stamp = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Helsinki", dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
-      const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Helsinki", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-      const renderItem = (item: ProgramItem) => `<li class="session ${item.isCancelled ? "cancelled" : ""}">
-        <div><time>${time(item.start)}–${time(item.end)}</time> <strong>${esc(item.title)}</strong>
-        ${item.isCancelled ? '<span class="badge">Cancelled</span>' : ""}</div>
-        <p>${esc(item.shortDescription)}</p><small>${esc(item.location || "Location TBA")} · ${esc(item.signupMode === "none" ? "Walk in" : item.signupMode === "konsti" ? "Signup in Konsti" : "Signup on site")}</small></li>`;
+
+      // ---- Display formatters (UTC instants in, con-local strings out) -----------------
+
+      const dayHeadingFmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Helsinki",
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      });
+      const timeFmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Helsinki",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const stampFmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Helsinki",
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+      const inputFmt = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "Europe/Helsinki",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      });
+
+      const esc = (text: string) =>
+        text.replace(
+          /[&<>"']/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+        );
+      const dayHeading = (day: string) => dayHeadingFmt.format(new Date(`${day}T12:00:00Z`));
+      const timeRange = (start: string, end: string) =>
+        `${timeFmt.format(new Date(start))}–${timeFmt.format(new Date(end))}`;
+      const toInputValue = (ms: number) => inputFmt.format(ms).replace(" ", "T");
+
+      // ---- Signup / capacity copy (primer §5 step 8) -----------------------------------
+
+      // Fallback copy for a physical signupType with no configured location (a `warn`,
+      // never a hard failure — see config/signup.ts). Guests still get pointed somewhere.
+      const PHYSICAL_FALLBACK_LABEL = "Signup at the info desk";
+      const PHYSICAL_FALLBACK_DETAIL = "Sign up on site — ask at the program information desk.";
+
+      function signupLabel(item: ProgramItem): string {
+        switch (item.signupMode) {
+          case "none":
+            return "No signup needed";
+          case "konsti":
+            return item.signupStrategy === "lottery" ? "Konsti lottery" : "Konsti signup";
+          case "physical":
+            return item.physicalSignupLocation?.labelEn ?? PHYSICAL_FALLBACK_LABEL;
+        }
+      }
+
+      /**
+       * The one-line explanation under the signup label:
+       *  - none:     walk in, nothing to do.
+       *  - konsti:   direct-vs-lottery, so a lottery isn't read as a confirmed seat.
+       *  - physical: where to sign up, in words — never an online action.
+       */
+      function signupDetail(item: ProgramItem): string {
+        switch (item.signupMode) {
+          case "none":
+            return "Just walk in — no signup required.";
+          case "konsti":
+            return item.signupStrategy === "lottery"
+              ? "Lottery: a signup enters you in a draw — it does not confirm a seat."
+              : "Direct signup: seats are given first come, first served.";
+          case "physical":
+            return item.physicalSignupLocation?.instructionsEn ?? PHYSICAL_FALLBACK_DETAIL;
+        }
+      }
+
+      function capacityLabel(item: ProgramItem): string | null {
+        switch (item.capacityStatus) {
+          case "not-applicable":
+            return null;
+          case "available":
+            return item.remainingSeats != null
+              ? `${item.remainingSeats} of ${item.maxAttendance} seats left`
+              : "Seats available";
+          case "full":
+            return "No seats left";
+          case "unknown":
+            return "Live seat count unavailable";
+        }
+      }
+
+      /** A Konsti session known full — the one case that earns a scannable "Full" marker. */
+      const isKonstiFull = (item: ProgramItem) =>
+        item.signupMode === "konsti" && item.capacityStatus === "full";
+
+      // ---- Rendering -------------------------------------------------------------------
+
+      function renderItem(item: ProgramItem): string {
+        const capacity = capacityLabel(item);
+        const konstiLink =
+          item.signupMode === "konsti" && item.signupUrl && !item.isCancelled
+            ? ` <a class="konsti-link" href="${esc(item.signupUrl)}" rel="noopener">open in Konsti</a>`
+            : "";
+        const location = item.location
+          ? `<a href="${esc(conventionMapUrl(item.location))}" rel="noopener">${esc(item.location)}</a>`
+          : "—";
+        return `<li class="session ${item.isCancelled ? "cancelled" : ""}"
+          data-start="${esc(item.start)}"
+          data-end="${esc(item.end)}"
+          data-cancelled="${String(item.isCancelled)}"
+          data-revolving="${String(item.isRevolvingDoor)}"
+          data-signup-mode="${esc(item.signupMode)}"
+          data-capacity="${esc(item.capacityStatus)}">
+          <div class="session-head">
+            <span class="time">${timeRange(item.start, item.end)}</span>
+            <h3 class="title">${esc(item.title)}</h3>
+            ${item.isCancelled ? '<span class="badge cancelled-badge">Cancelled</span>' : ""}
+            ${!item.isCancelled && isKonstiFull(item) ? '<span class="badge full-badge">Full</span>' : ""}
+          </div>
+          ${
+            !item.isCancelled && item.isRevolvingDoor
+              ? '<p class="revolving-note">You can join mid-session.</p>'
+              : ""
+          }
+          ${item.shortDescription ? `<p class="short">${esc(item.shortDescription)}</p>` : ""}
+          <dl class="facts">
+            <div><dt>Location</dt><dd>${location}</dd></div>
+            <div>
+              <dt>Signup</dt>
+              <dd>
+                <span class="signup-label">${esc(signupLabel(item))}</span>${konstiLink}
+                <span class="signup-detail">${esc(signupDetail(item))}</span>
+              </dd>
+            </div>
+            ${capacity ? `<div><dt>Capacity</dt><dd>${esc(capacity)}</dd></div>` : ""}
+          </dl>
+        </li>`;
+      }
+
+      function renderProgram(data: ProgramData): void {
+        // Sort by start, then group into day sections.
+        const sorted = [...data.items].sort((a, b) => a.start.localeCompare(b.start));
+        const days: { day: string; items: ProgramItem[] }[] = [];
+        for (const item of sorted) {
+          const bucket = days.find((d) => d.day === item.day);
+          if (bucket) bucket.items.push(item);
+          else days.push({ day: item.day, items: [item] });
+        }
+        programRoot.innerHTML = days
+          .map(
+            (group) =>
+              `<section class="day"><h2>${esc(dayHeading(group.day))}</h2>` +
+              `<ul class="sessions">${group.items.map(renderItem).join("")}</ul></section>`,
+          )
+          .join("");
+      }
+
+      // ---- Filtering -------------------------------------------------------------------
+      // Rebuilt from the rendered DOM so the pure classifiers stay the single source of
+      // truth for what counts as joinable.
+
+      let sessions: { el: HTMLLIElement; input: TimeWindowInput }[] = [];
+      let daySections: HTMLElement[] = [];
+
+      const params = new URLSearchParams(location.search);
+      const { nowMs, overridden } = resolveNow(params.get("now"), Date.now());
+      const hasWindowParams = params.has("from") || params.has("to");
+      let selectedWindow = resolveWindow(params.get("from"), params.get("to"), nowMs);
+
+      function collectSessions(): void {
+        sessions = [...programRoot.querySelectorAll<HTMLLIElement>(".session")].map((el) => ({
+          el,
+          input: {
+            start: el.dataset.start ?? "",
+            end: el.dataset.end ?? "",
+            isCancelled: el.dataset.cancelled === "true",
+            isRevolvingDoor: el.dataset.revolving === "true",
+            signupMode: el.dataset.signupMode,
+            capacityStatus: el.dataset.capacity,
+          } as TimeWindowInput,
+        }));
+        daySections = [...programRoot.querySelectorAll<HTMLElement>(".day")];
+      }
+
+      function ensureBadge(el: HTMLLIElement): HTMLSpanElement {
+        let badge = el.querySelector<HTMLSpanElement>(".window-badge");
+        if (!badge) {
+          badge = document.createElement("span");
+          badge.className = "badge window-badge";
+          el.querySelector(".session-head")?.appendChild(badge);
+        }
+        return badge;
+      }
+
+      function windowLabel(overlap: string, startMs: number): string {
+        if (overlap === "join-in-progress") return "In progress · join anytime";
+        const mins = Math.round((startMs - nowMs) / 60_000);
+        return mins <= 0 ? "Starting now" : `Starts in ${mins} min`;
+      }
+
+      const clearBadge = (el: HTMLLIElement) => el.querySelector(".window-badge")?.remove();
+
+      // Hide any day heading whose sessions are all filtered out.
+      function syncDayHeadings(): void {
+        for (const section of daySections) {
+          const anyVisible = [...section.querySelectorAll<HTMLLIElement>(".session")].some(
+            (el) => !el.hidden,
+          );
+          section.hidden = !anyVisible;
+        }
+      }
+
+      // Show every session (the honest baseline); the filtered views narrow from here.
+      function revealAll(): void {
+        for (const { el } of sessions) {
+          el.hidden = false;
+          clearBadge(el);
+        }
+        for (const section of daySections) section.hidden = false;
+        if (emptyEl) emptyEl.hidden = true;
+        if (countEl) countEl.textContent = `${sessions.length} sessions`;
+      }
+
+      // Apply a per-session predicate, badge the kept ones, and report the count/empty state.
+      function applyFilter(
+        keep: (input: TimeWindowInput) => { included: boolean; badge: string | null },
+        summarise: (shown: number) => string,
+        emptyText: string,
+      ): void {
+        let shown = 0;
+        for (const { el, input } of sessions) {
+          const { included, badge } = keep(input);
+          el.hidden = !included;
+          if (included) {
+            shown += 1;
+            if (badge) ensureBadge(el).textContent = badge;
+            else clearBadge(el);
+          } else {
+            clearBadge(el);
+          }
+        }
+        syncDayHeadings();
+        if (emptyEl) {
+          emptyEl.textContent = emptyText;
+          emptyEl.hidden = shown > 0;
+        }
+        if (countEl) countEl.textContent = summarise(shown);
+      }
+
+      function render(view: View): void {
+        if (view === "all") {
+          revealAll();
+        } else if (view === "walkins") {
+          applyFilter(
+            (input) => ({ included: isWalkInNow(input, nowMs), badge: "Happening now" }),
+            (shown) => (shown === 0 ? "No walk-in games open now" : `${shown} open for walk-ins now`),
+            "No walk-in games are running right now. Try Joinable soon or All sessions.",
+          );
+        } else if (view === "slot") {
+          if (!selectedWindow.active) {
+            applyFilter(
+              () => ({ included: false, badge: null }),
+              () => "Choose a valid time slot",
+              "Choose an end time after the start time.",
+            );
+            return;
+          }
+          applyFilter(
+            (input) => {
+              const { included, overlap } = classifyInWindow(
+                input,
+                selectedWindow.fromMs,
+                selectedWindow.toMs,
+              );
+              return {
+                included,
+                badge: included ? windowLabel(overlap, Date.parse(input.start)) : null,
+              };
+            },
+            (shown) =>
+              shown === 0
+                ? "No joinable sessions in this time slot"
+                : `${shown} joinable in your time slot`,
+            "Nothing joinable in this time slot. Try another time or All sessions.",
+          );
+        } else {
+          applyFilter(
+            (input) => {
+              const { included, overlap } = classifyJoinableSoon(input, nowMs);
+              return {
+                included,
+                badge: included ? windowLabel(overlap, Date.parse(input.start)) : null,
+              };
+            },
+            (shown) => (shown === 0 ? "No joinable sessions" : `${shown} joinable in the next hour`),
+            "Nothing joinable in the next hour. Switch to All sessions to see the full program.",
+          );
+        }
+      }
+
+      function setView(view: View): void {
+        for (const btn of viewButtons) {
+          btn.setAttribute("aria-pressed", String(btn.dataset.view === view));
+        }
+        if (slotPicker) slotPicker.hidden = view !== "slot";
+        render(view);
+      }
+
+      function applySelectedWindow(): void {
+        const pickedFrom = slotFrom?.value ? helsinkiWallClockToMs(slotFrom.value) : nowMs;
+        const pickedTo = slotTo?.value ? helsinkiWallClockToMs(slotTo.value) : Number.NaN;
+        selectedWindow = resolveWindow(
+          Number.isNaN(pickedFrom) ? null : new Date(pickedFrom).toISOString(),
+          Number.isNaN(pickedTo) ? null : new Date(pickedTo).toISOString(),
+          nowMs,
+        );
+        if (slotError) {
+          slotError.hidden = selectedWindow.active;
+          slotError.textContent = "Choose a valid end time after now and after the start time.";
+        }
+        if (selectedWindow.active) {
+          params.set("from", new Date(selectedWindow.fromMs).toISOString());
+          params.set("to", new Date(selectedWindow.toMs).toISOString());
+          history.replaceState(null, "", `${location.pathname}?${params}${location.hash}`);
+        }
+        render("slot");
+      }
+
+      // ---- Boot ------------------------------------------------------------------------
 
       const result = await loadProgramData({ url, cache: localStorageProgramCache() });
+
       if (result.status === "unavailable-first-run") {
-        status.textContent = "Program unavailable";
-        root.innerHTML = '<p class="notice">The program cannot be loaded right now. Connect to the internet and reload; after one successful visit it remains available offline.</p>';
+        statusEl.textContent = "Program unavailable";
+        programRoot.innerHTML =
+          '<p class="notice">The program cannot be loaded right now. Connect to the internet ' +
+          "and reload; after one successful visit it remains available offline.</p>";
       } else {
+        const data = result.data;
+        renderProgram(data);
+        collectSessions();
+
         const cacheNote = result.status === "ready-cache" ? " · offline cached copy" : "";
-        status.textContent = `${result.data.items.length} gaming sessions · updated ${stamp(result.data.generatedAt)}${cacheNote}`;
-        if (result.status === "ready-cache" && result.stale) root.innerHTML = '<p class="notice">This cached program may be stale. Check Konsti before relying on availability.</p>';
-        const groups = new Map<string, ProgramItem[]>();
-        for (const item of [...result.data.items].sort((a,b) => a.start.localeCompare(b.start))) {
-          const group = groups.get(item.day);
-          if (group) group.push(item); else groups.set(item.day, [item]);
+        statusEl.textContent =
+          `${data.items.length} gaming sessions · program as of ` +
+          `${stampFmt.format(new Date(data.generatedAt))} (Helsinki)${cacheNote}`;
+
+        // Seed the slot picker from any ?from/?to params, and surface an invalid window.
+        if (selectedWindow.active && slotFrom && slotTo) {
+          slotFrom.value = toInputValue(selectedWindow.fromMs);
+          slotTo.value = toInputValue(selectedWindow.toMs);
         }
-        root.innerHTML += [...groups].map(([day, items]) => `<section><h2>${esc(day)}</h2><ul>${items.map(renderItem).join("")}</ul></section>`).join("");
+        if (hasWindowParams && !selectedWindow.active && slotError) {
+          slotError.hidden = false;
+          slotError.textContent = "Choose a valid end time after now and after the start time.";
+        }
+
+        // Reveal the JS-only controls and wire them up.
+        controls?.removeAttribute("hidden");
+        for (const btn of viewButtons) {
+          btn.addEventListener("click", () => {
+            const view = btn.dataset.view as View;
+            if (view === "slot" && slotFrom && slotTo && !slotTo.value) {
+              slotFrom.value = toInputValue(nowMs);
+              slotTo.value = toInputValue(nowMs + 2 * 60 * 60_000);
+              applySelectedWindow();
+            }
+            setView(view);
+          });
+        }
+        slotApply?.addEventListener("click", applySelectedWindow);
+        slotFrom?.addEventListener("change", applySelectedWindow);
+        slotTo?.addEventListener("change", applySelectedWindow);
+
+        if (overridden && nowNotice) {
+          nowNotice.hidden = false;
+          nowNotice.textContent =
+            `Testing as if it were ${stampFmt.format(nowMs)} (Helsinki) · ?now= override active`;
+        }
+
+        // Step 9: warn near the action UI when the snapshot has aged past 15 minutes.
+        // Uses the same resolved `nowMs` as the filters, so a `?now=` past the stamp shows stale.
+        if (staleNotice) {
+          const generatedAtMs = Date.parse(data.generatedAt);
+          if (!Number.isNaN(generatedAtMs)) {
+            const { isStale, ageMinutes } = classifyFreshness(generatedAtMs, nowMs);
+            staleNotice.hidden = !isStale;
+            if (isStale) {
+              staleNotice.textContent =
+                `Heads up: this program snapshot is ${ageMinutes} minutes old ` +
+                `(as of ${stampFmt.format(generatedAtMs)}, Helsinki). ` +
+                `Seat availability and cancellations may have changed since then — ` +
+                `check Konsti before relying on a seat.`;
+            }
+          }
+        }
+
+        setView(selectedWindow.active || hasWindowParams ? "slot" : "soon");
       }
+
       if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js");
     </script>
+
+    <style>
+      :root {
+        --fg: #1a1a1a;
+        --muted: #666;
+        --line: #e2e2e2;
+        --accent: #7a1f2b;
+      }
+
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        color: var(--fg);
+        line-height: 1.4;
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 4rem;
+      }
+
+      .page-header h1 {
+        margin: 0 0 0.25rem;
+        color: var(--accent);
+      }
+
+      .meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .day h2 {
+        font-size: 1.1rem;
+        margin: 2rem 0 0.5rem;
+        padding-bottom: 0.25rem;
+        border-bottom: 2px solid var(--line);
+      }
+
+      .sessions {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .session {
+        padding: 0.9rem 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .session.cancelled {
+        opacity: 0.6;
+      }
+
+      .session-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.5rem;
+      }
+
+      .time {
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+        font-size: 0.9rem;
+        min-width: 6.5rem;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 1.05rem;
+      }
+
+      .session.cancelled .title {
+        text-decoration: line-through;
+      }
+
+      .badge {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        padding: 0.1rem 0.4rem;
+        border-radius: 0.25rem;
+      }
+
+      .cancelled-badge {
+        background: #fbe3e3;
+        color: var(--accent);
+      }
+
+      .window-badge {
+        background: #e7f0e7;
+        color: #2f6b34;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+      }
+
+      .slot-picker {
+        flex-basis: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        gap: 0.6rem;
+        margin: 0;
+        padding: 0.65rem;
+        border: 1px solid var(--line);
+        border-radius: 0.4rem;
+      }
+
+      .slot-picker[hidden] {
+        display: none;
+      }
+
+      .slot-picker legend,
+      .slot-picker label {
+        font-size: 0.85rem;
+      }
+
+      .slot-picker label {
+        display: grid;
+        gap: 0.2rem;
+      }
+
+      .slot-picker input,
+      .slot-apply {
+        font: inherit;
+        padding: 0.3rem 0.45rem;
+      }
+
+      .slot-error {
+        flex-basis: 100%;
+        margin: 0;
+        color: var(--accent);
+        font-size: 0.85rem;
+      }
+
+      .views {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 0.4rem;
+        overflow: hidden;
+      }
+
+      .view-btn {
+        appearance: none;
+        border: 0;
+        background: #fff;
+        color: var(--fg);
+        font: inherit;
+        font-size: 0.9rem;
+        padding: 0.35rem 0.75rem;
+        cursor: pointer;
+      }
+
+      .view-btn + .view-btn {
+        border-left: 1px solid var(--line);
+      }
+
+      .view-btn[aria-pressed="true"] {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .result-count {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .now-notice {
+        margin: 0.5rem 0 0;
+        padding: 0.4rem 0.6rem;
+        background: #fff6e0;
+        border-radius: 0.3rem;
+        font-size: 0.85rem;
+        color: #7a5b00;
+      }
+
+      .stale-notice {
+        margin: 0.5rem 0 0;
+        padding: 0.5rem 0.7rem;
+        background: #fbe3e3;
+        border-left: 3px solid var(--accent);
+        border-radius: 0.3rem;
+        font-size: 0.85rem;
+        color: var(--accent);
+      }
+
+      .empty-state {
+        color: var(--muted);
+        padding: 1.5rem 0;
+      }
+
+      .notice {
+        margin: 1.5rem 0;
+        padding: 0.7rem;
+        background: #fbe3e3;
+        color: var(--accent);
+        border-radius: 0.25rem;
+      }
+
+      .short {
+        margin: 0.4rem 0 0.5rem;
+        color: var(--fg);
+      }
+
+      .facts {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.15rem 0.75rem;
+        margin: 0;
+        font-size: 0.9rem;
+      }
+
+      .facts > div {
+        display: contents;
+      }
+
+      .facts dt {
+        color: var(--muted);
+      }
+
+      .facts dd {
+        margin: 0;
+      }
+
+      .intro {
+        margin: 0.75rem 0 0;
+        font-size: 0.9rem;
+        color: var(--fg);
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      .full-badge {
+        background: #f0dede;
+        color: var(--accent);
+      }
+
+      .revolving-note {
+        margin: 0.35rem 0 0;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #2f6b34;
+      }
+
+      .signup-detail {
+        display: block;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+    </style>
   </body>
 </html>
-
-<style>
-  :root { font-family: system-ui, sans-serif; color: #191919; --accent:#7a1f2b; }
-  body { max-width: 48rem; margin:auto; padding:1.5rem 1rem 4rem; line-height:1.45; }
-  h1 { color:var(--accent); margin-bottom:.2rem; } header p { color:#666; margin-top:0; }
-  h2 { font-size:1.1rem; border-bottom:2px solid #ddd; padding-bottom:.3rem; margin-top:2rem; }
-  ul { list-style:none; padding:0; } .session { padding:.8rem 0; border-bottom:1px solid #ddd; }
-  .session p { margin:.3rem 0; } .cancelled { opacity:.6; } .cancelled strong { text-decoration:line-through; }
-  .badge,.notice { color:var(--accent); background:#fbe3e3; padding:.2rem .45rem; margin-left:.4rem; border-radius:.25rem; }
-  .notice { margin-left:0; padding:.7rem; } time,small { color:#666; }
-</style>

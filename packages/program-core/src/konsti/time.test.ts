@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { helsinkiDay, helsinkiWallClockToMs } from "./time.ts";
+import { helsinkiDay, helsinkiTime, helsinkiWallClockToMs } from "./time.ts";
 
 describe("Helsinki time helpers", () => {
   it("converts a summer wall clock using EEST", () => {
@@ -19,5 +19,21 @@ describe("Helsinki time helpers", () => {
 
   it("retains the existing forward day conversion", () => {
     expect(helsinkiDay("2026-07-24T22:30:00Z")).toBe("2026-07-25");
+  });
+
+  it("formats the Helsinki wall-clock time in 24h (EEST)", () => {
+    expect(helsinkiTime("2026-07-24T10:05:00Z")).toBe("13:05");
+    // Past midnight in UTC is still the small hours the next Helsinki day.
+    expect(helsinkiTime("2026-07-24T22:30:00Z")).toBe("01:30");
+  });
+
+  it("returns null for an unparseable instant", () => {
+    expect(helsinkiTime("not-a-date")).toBeNull();
+  });
+
+  it("round-trips against helsinkiWallClockToMs", () => {
+    const ms = helsinkiWallClockToMs("2026-07-24T22:00");
+    const iso = new Date(ms).toISOString();
+    expect(`${helsinkiDay(iso)}T${helsinkiTime(iso)}`).toBe("2026-07-24T22:00");
   });
 });

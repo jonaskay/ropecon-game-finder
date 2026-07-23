@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
+    "stop": "astro dev stop",
     "build": "astro check && astro build",
     "test": "vitest run",
     "typecheck": "astro check"

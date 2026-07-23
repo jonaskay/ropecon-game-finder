@@ -23,6 +23,23 @@ export function helsinkiDay(iso: string): string | null {
   return HELSINKI_DAY_FMT.format(instant);
 }
 
+const HELSINKI_TIME_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Helsinki",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/**
+ * Europe/Helsinki wall-clock time (HH:MM, 24h) for a UTC instant, or null if unparseable.
+ * The inverse of `helsinkiWallClockToMs` for the "time" half of a datetime-local value.
+ */
+export function helsinkiTime(iso: string): string | null {
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) return null;
+  return HELSINKI_TIME_FMT.format(instant);
+}
+
 const HELSINKI_PARTS_FMT = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Europe/Helsinki",
   year: "numeric",

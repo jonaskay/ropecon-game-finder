@@ -54,11 +54,36 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
             All sessions
           </button>
         </div>
+        {/* "My time slot" picker (§6, issue-05): `from` = day + start time, `to` chosen
+            relative to `from` via +Nh quick options (or an explicit Custom window). The
+            day dropdowns and quick buttons are populated by the client script. */}
         <fieldset class="slot-picker" hidden>
           <legend>When are you free? (Helsinki time)</legend>
-          <label>From <input type="datetime-local" data-slot-from /></label>
-          <label>To <input type="datetime-local" data-slot-to /></label>
-          <button type="button" class="slot-apply">Show games</button>
+          <div class="slot-from">
+            <label class="slot-field">
+              <span>Day</span>
+              <select data-slot-day></select>
+            </label>
+            <label class="slot-field">
+              <span>Start time</span>
+              <input type="time" step="900" data-slot-time />
+            </label>
+          </div>
+          <div class="slot-to">
+            <span class="slot-to-label" id="slot-to-label">For how long?</span>
+            <div class="slot-quick" role="group" aria-labelledby="slot-to-label"></div>
+            <div class="slot-custom" hidden>
+              <label class="slot-field">
+                <span>Until day</span>
+                <select data-slot-to-day></select>
+              </label>
+              <label class="slot-field">
+                <span>Until time</span>
+                <input type="time" step="900" data-slot-to-time />
+              </label>
+            </div>
+          </div>
+          <p class="slot-echo" aria-live="polite" hidden></p>
           <p class="slot-error" role="alert" hidden></p>
         </fieldset>
         <p class="result-count" aria-live="polite"></p>
@@ -90,7 +115,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
        * views. `?now=` overrides the device clock for testing outside con dates (Step 7).
        */
       import type { ProgramData, ProgramItem } from "@ropecon/program-core";
-      import { classifyVenue, helsinkiWallClockToMs, resolveConMapLink } from "@ropecon/program-core";
+      import { classifyVenue, resolveConMapLink } from "@ropecon/program-core";
       import { loadProgramData, localStorageProgramCache } from "../program/load.ts";
       import {
         classifyInWindow,
@@ -100,6 +125,16 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         resolveWindow,
         type TimeWindowInput,
       } from "../classify/window.ts";
+      import {
+        conDays,
+        defaultFromTime,
+        resolveDefaultSelection,
+        resolveSlot,
+        selectionFromWindow,
+        QUICK_HOURS,
+        type QuickOption,
+        type SlotSelection,
+      } from "../classify/slot.ts";
       import { classifyFreshness } from "../classify/freshness.ts";
       import { buildOrientation, type OrientationModel } from "../classify/orientation.ts";
 
@@ -117,9 +152,13 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       const staleNotice = document.querySelector<HTMLElement>(".stale-notice");
       const viewButtons = [...document.querySelectorAll<HTMLButtonElement>(".view-btn")];
       const slotPicker = document.querySelector<HTMLFieldSetElement>(".slot-picker");
-      const slotFrom = document.querySelector<HTMLInputElement>("[data-slot-from]");
-      const slotTo = document.querySelector<HTMLInputElement>("[data-slot-to]");
-      const slotApply = document.querySelector<HTMLButtonElement>(".slot-apply");
+      const slotDay = document.querySelector<HTMLSelectElement>("[data-slot-day]");
+      const slotTime = document.querySelector<HTMLInputElement>("[data-slot-time]");
+      const slotQuick = document.querySelector<HTMLElement>(".slot-quick");
+      const slotCustom = document.querySelector<HTMLElement>(".slot-custom");
+      const slotToDay = document.querySelector<HTMLSelectElement>("[data-slot-to-day]");
+      const slotToTime = document.querySelector<HTMLInputElement>("[data-slot-to-time]");
+      const slotEcho = document.querySelector<HTMLElement>(".slot-echo");
       const slotError = document.querySelector<HTMLElement>(".slot-error");
       const url = document.querySelector<HTMLMetaElement>('meta[name="program-data-url"]')!.content;
 
@@ -151,6 +190,19 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         hourCycle: "h23",
       });
 
+      // Compact weekday for the slot echo and day dropdowns ("Fri", "Sat"…).
+      const shortWeekdayFmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Helsinki",
+        weekday: "short",
+      });
+      // Day-dropdown option label, e.g. "Fri 24 Jul".
+      const dayOptionFmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Helsinki",
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      });
+
       const esc = (text: string) =>
         text.replace(
           /[&<>"']/g,
@@ -159,7 +211,11 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       const dayHeading = (day: string) => dayHeadingFmt.format(new Date(`${day}T12:00:00Z`));
       const timeRange = (start: string, end: string) =>
         `${timeFmt.format(new Date(start))}–${timeFmt.format(new Date(end))}`;
-      const toInputValue = (ms: number) => inputFmt.format(ms).replace(" ", "T");
+      // Instant → the {day, time} halves of a datetime, for seeding the picker's inputs.
+      const toInputParts = (ms: number) => {
+        const [day, time] = inputFmt.format(ms).split(" ");
+        return { day: day ?? "", time: time ?? "" };
+      };
 
       // Orientation-state date formatters (§6 empty state). A con day is a YYYY-MM-DD
       // Helsinki calendar day; noon UTC lands on that same day in Helsinki (UTC+3 in July).
@@ -544,8 +600,8 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
           if (!selectedWindow.active) {
             applyFilter(
               () => ({ included: false, badge: null }),
-              () => "Choose a valid time slot",
-              "Choose an end time after the start time.",
+              () => "Choose a start day and time",
+              "Enter a start day and time to choose a window.",
             );
             return;
           }
@@ -597,24 +653,102 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         render(view);
       }
 
-      function applySelectedWindow(): void {
-        const pickedFrom = slotFrom?.value ? helsinkiWallClockToMs(slotFrom.value) : nowMs;
-        const pickedTo = slotTo?.value ? helsinkiWallClockToMs(slotTo.value) : Number.NaN;
-        selectedWindow = resolveWindow(
-          Number.isNaN(pickedFrom) ? null : new Date(pickedFrom).toISOString(),
-          Number.isNaN(pickedTo) ? null : new Date(pickedTo).toISOString(),
-          nowMs,
-        );
-        if (slotError) {
-          slotError.hidden = selectedWindow.active;
-          slotError.textContent = "Choose a valid end time after now and after the start time.";
+      // ---- "My time slot" picker (§6, issue-05) --------------------------------------
+      // `to` is chosen relative to `from`: a +Nh quick option (default +3h), or an
+      // explicit Custom window. The pure model (classify/slot.ts) owns the maths and the
+      // inverted-window correction; this wires it to the day/time/quick controls.
+
+      let activeQuick: QuickOption = 3;
+
+      // "Showing Fri 13:00–16:00" (or across midnight, "Fri 23:00 – Sat 02:00"), so a
+      // +Nh quick option is never opaque (§6 "Echo the resolved window back").
+      function windowEcho(fromMs: number, toMs: number): string {
+        const fromDay = shortWeekdayFmt.format(fromMs);
+        const toDay = shortWeekdayFmt.format(toMs);
+        const f = timeFmt.format(fromMs);
+        const t = timeFmt.format(toMs);
+        return fromDay === toDay
+          ? `Showing ${fromDay} ${f}–${t}`
+          : `Showing ${fromDay} ${f} – ${toDay} ${t}`;
+      }
+
+      function populateDaySelect(select: HTMLSelectElement, days: string[]): void {
+        select.innerHTML = days
+          .map(
+            (day) => `<option value="${esc(day)}">${esc(dayOptionFmt.format(dayAsDate(day)))}</option>`,
+          )
+          .join("");
+      }
+
+      function updateQuickButtons(): void {
+        for (const btn of slotQuick?.querySelectorAll<HTMLButtonElement>(".quick-btn") ?? []) {
+          btn.setAttribute("aria-pressed", String(btn.dataset.quick === String(activeQuick)));
         }
-        if (selectedWindow.active) {
-          params.set("from", new Date(selectedWindow.fromMs).toISOString());
-          params.set("to", new Date(selectedWindow.toMs).toISOString());
+      }
+
+      function readSelection(): SlotSelection {
+        return {
+          fromDay: slotDay?.value ?? "",
+          fromTime: slotTime?.value ?? "",
+          quick: activeQuick,
+          toDay: slotToDay?.value ?? "",
+          toTime: slotToTime?.value ?? "",
+        };
+      }
+
+      // Resolve the current controls into the active window, reflect any correction back
+      // into the inputs, echo the resolved window, persist it to the URL, and re-filter.
+      function applySlot(): void {
+        const resolved = resolveSlot(readSelection());
+        selectedWindow = { fromMs: resolved.fromMs, toMs: resolved.toMs, active: resolved.active };
+
+        if (resolved.corrected && slotToDay && slotToTime) {
+          slotToDay.value = resolved.toDay;
+          slotToTime.value = resolved.toTime;
+        }
+        if (slotError) {
+          slotError.hidden = resolved.active;
+          slotError.textContent = "Enter a start day and time to choose a window.";
+        }
+        if (slotEcho) {
+          slotEcho.hidden = !resolved.active;
+          if (resolved.active) slotEcho.textContent = windowEcho(resolved.fromMs, resolved.toMs);
+        }
+        if (resolved.active) {
+          params.set("from", new Date(resolved.fromMs).toISOString());
+          params.set("to", new Date(resolved.toMs).toISOString());
           history.replaceState(null, "", `${location.pathname}?${params}${location.hash}`);
         }
         render("slot");
+      }
+
+      // Populate the day dropdowns + quick buttons, seed the selection (from ?from/?to
+      // when present, else the data-derived default), and resolve the first window.
+      function initSlotPicker(items: ProgramItem[]): void {
+        const days = conDays(items);
+        if (slotDay) populateDaySelect(slotDay, days);
+        if (slotToDay) populateDaySelect(slotToDay, days);
+        if (slotQuick) {
+          slotQuick.innerHTML =
+            QUICK_HOURS.map(
+              (h) => `<button type="button" class="quick-btn" data-quick="${h}">+${h}h</button>`,
+            ).join("") +
+            '<button type="button" class="quick-btn" data-quick="custom">Custom</button>';
+        }
+
+        const seed = selectedWindow.active
+          ? selectionFromWindow(selectedWindow.fromMs, selectedWindow.toMs)
+          : resolveDefaultSelection(items, nowMs);
+
+        activeQuick = seed.quick;
+        if (slotDay && days.includes(seed.fromDay)) slotDay.value = seed.fromDay;
+        if (slotTime) slotTime.value = seed.fromTime;
+        if (slotToDay && days.includes(seed.toDay)) slotToDay.value = seed.toDay;
+        if (slotToTime) slotToTime.value = seed.toTime;
+        updateQuickButtons();
+        if (slotCustom) slotCustom.hidden = activeQuick !== "custom";
+
+        applySlot();
       }
 
       // ---- Boot ------------------------------------------------------------------------
@@ -645,32 +779,44 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
           `${data.items.length} gaming sessions · program as of ` +
           `${stampFmt.format(new Date(data.generatedAt))} (Helsinki)${cacheNote}`;
 
-        // Seed the slot picker from any ?from/?to params, and surface an invalid window.
-        if (selectedWindow.active && slotFrom && slotTo) {
-          slotFrom.value = toInputValue(selectedWindow.fromMs);
-          slotTo.value = toInputValue(selectedWindow.toMs);
-        }
-        if (hasWindowParams && !selectedWindow.active && slotError) {
-          slotError.hidden = false;
-          slotError.textContent = "Choose a valid end time after now and after the start time.";
-        }
+        // Seed and resolve the "My time slot" picker (day + relative +Nh window, §6).
+        initSlotPicker(data.items);
 
         // Reveal the JS-only controls and wire them up.
         controls?.removeAttribute("hidden");
         for (const btn of viewButtons) {
-          btn.addEventListener("click", () => {
-            const view = btn.dataset.view as View;
-            if (view === "slot" && slotFrom && slotTo && !slotTo.value) {
-              slotFrom.value = toInputValue(nowMs);
-              slotTo.value = toInputValue(nowMs + 2 * 60 * 60_000);
-              applySelectedWindow();
-            }
-            setView(view);
-          });
+          btn.addEventListener("click", () => setView(btn.dataset.view as View));
         }
-        slotApply?.addEventListener("click", applySelectedWindow);
-        slotFrom?.addEventListener("change", applySelectedWindow);
-        slotTo?.addEventListener("change", applySelectedWindow);
+        // Changing the day gives that day its own sensible default start time, then
+        // recomputes the window; time/custom changes just re-resolve.
+        slotDay?.addEventListener("change", () => {
+          if (slotTime && slotDay) slotTime.value = defaultFromTime(data.items, slotDay.value, nowMs);
+          applySlot();
+        });
+        slotTime?.addEventListener("change", applySlot);
+        slotToDay?.addEventListener("change", applySlot);
+        slotToTime?.addEventListener("change", applySlot);
+        slotQuick?.addEventListener("click", (event) => {
+          const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".quick-btn");
+          if (!btn) return;
+          const q = btn.dataset.quick;
+          activeQuick = q === "custom" ? "custom" : (Number(q) as QuickOption);
+          // Entering Custom: seed the explicit inputs from the window just shown, so the
+          // guest adjusts from a sensible value rather than an empty field.
+          if (
+            activeQuick === "custom" &&
+            slotToDay &&
+            slotToTime &&
+            Number.isFinite(selectedWindow.toMs)
+          ) {
+            const p = toInputParts(selectedWindow.toMs);
+            if (conDays(data.items).includes(p.day)) slotToDay.value = p.day;
+            slotToTime.value = p.time;
+          }
+          updateQuickButtons();
+          if (slotCustom) slotCustom.hidden = activeQuick !== "custom";
+          applySlot();
+        });
 
         if (overridden && nowNotice) {
           nowNotice.hidden = false;
@@ -695,7 +841,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
           }
         }
 
-        setView(selectedWindow.active || hasWindowParams ? "slot" : "soon");
+        setView(hasWindowParams ? "slot" : "soon");
       }
 
       if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js");
@@ -804,11 +950,10 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       .slot-picker {
         flex-basis: 100%;
         display: flex;
-        flex-wrap: wrap;
-        align-items: end;
-        gap: 0.6rem;
+        flex-direction: column;
+        gap: 0.7rem;
         margin: 0;
-        padding: 0.65rem;
+        padding: 0.75rem;
         border: 1px solid var(--line);
         border-radius: 0.4rem;
       }
@@ -817,24 +962,86 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         display: none;
       }
 
-      .slot-picker legend,
-      .slot-picker label {
+      .slot-picker legend {
         font-size: 0.85rem;
+        font-weight: 600;
+        padding: 0 0.25rem;
       }
 
-      .slot-picker label {
+      .slot-from,
+      .slot-custom {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+      }
+
+      .slot-field {
         display: grid;
         gap: 0.2rem;
+        font-size: 0.8rem;
+        color: var(--muted);
       }
 
-      .slot-picker input,
-      .slot-apply {
+      .slot-field select,
+      .slot-field input {
         font: inherit;
-        padding: 0.3rem 0.45rem;
+        color: var(--fg);
+        padding: 0.35rem 0.45rem;
+        border: 1px solid var(--line);
+        border-radius: 0.3rem;
+        background: #fff;
+      }
+
+      .slot-to-label {
+        display: block;
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-bottom: 0.35rem;
+      }
+
+      .slot-quick {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+      }
+
+      .quick-btn {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--fg);
+        font: inherit;
+        font-size: 0.9rem;
+        padding: 0.4rem 0.7rem;
+        border-radius: 0.3rem;
+        cursor: pointer;
+      }
+
+      .quick-btn[aria-pressed="true"] {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      .slot-custom {
+        margin-top: 0.6rem;
+      }
+
+      .slot-custom[hidden] {
+        display: none;
+      }
+
+      .slot-echo {
+        margin: 0;
+        font-size: 0.9rem;
+        font-weight: 600;
+      }
+
+      .slot-echo[hidden] {
+        display: none;
       }
 
       .slot-error {
-        flex-basis: 100%;
         margin: 0;
         color: var(--accent);
         font-size: 0.85rem;

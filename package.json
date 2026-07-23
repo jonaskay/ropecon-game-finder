@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "bun --filter @ropecon/web dev",
+    "stop": "bun --filter @ropecon/web stop",
     "build": "bun run build:web && bun run build:job",
     "build:web": "bun --filter @ropecon/web build",
     "build:job": "bun --filter @ropecon/program-refresh build",

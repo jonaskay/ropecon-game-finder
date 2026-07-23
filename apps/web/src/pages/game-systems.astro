@@ -1,0 +1,162 @@
+---
+const programUrl = import.meta.env.PUBLIC_PROGRAM_DATA_URL;
+if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="program-data-url" content={programUrl} />
+    <title>Game systems · Ropecon Game Finder</title>
+  </head>
+  <body>
+    <header class="page-header">
+      <nav class="finder-nav" aria-label="Finder views">
+        <a href="/">← Program finder</a>
+      </nav>
+      <h1>Game systems</h1>
+      <p class="meta" id="status" aria-live="polite">Loading the latest program…</p>
+      <p class="intro">
+        Browse every game system represented in the current program. Expand any system
+        to see its scheduled sessions. Konsti remains authoritative for program and signup details.
+      </p>
+      <p class="stale-notice" role="alert" hidden></p>
+    </header>
+
+    <main>
+      <p class="empty-state" hidden></p>
+      <div id="systems"></div>
+    </main>
+    <noscript>This finder needs JavaScript to load the program from its published data service.</noscript>
+
+    <script>
+      import { classifyFreshness } from "../classify/freshness.ts";
+      import { groupByGameSystem, renderGameSystems } from "../program/game-systems.ts";
+      import { loadProgramData, localStorageProgramCache } from "../program/load.ts";
+
+      const statusEl = document.querySelector<HTMLElement>("#status")!;
+      const systemsRoot = document.querySelector<HTMLElement>("#systems")!;
+      const emptyEl = document.querySelector<HTMLElement>(".empty-state");
+      const staleNotice = document.querySelector<HTMLElement>(".stale-notice");
+      const url = document.querySelector<HTMLMetaElement>('meta[name="program-data-url"]')!.content;
+      const locale = document.documentElement.lang || navigator.language;
+      const stampFmt = new Intl.DateTimeFormat(locale, {
+        timeZone: "Europe/Helsinki",
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+
+      const result = await loadProgramData({ url, cache: localStorageProgramCache() });
+
+      if (result.status === "unavailable-first-run") {
+        statusEl.textContent = "Program unavailable";
+        systemsRoot.innerHTML =
+          '<p class="notice">The program cannot be loaded right now. Connect to the internet ' +
+          "and reload; after one successful visit it remains available offline.</p>";
+      } else {
+        const { data } = result;
+        const groups = groupByGameSystem(data.items, locale);
+        systemsRoot.innerHTML = renderGameSystems(groups);
+
+        if (groups.length === 0 && emptyEl) {
+          emptyEl.hidden = false;
+          emptyEl.textContent = "No game systems are listed in the current program.";
+        }
+
+        const cacheNote = result.status === "ready-cache" ? " · offline cached copy" : "";
+        statusEl.textContent =
+          `${groups.length} game systems · ${data.items.length} gaming sessions · program as of ` +
+          `${stampFmt.format(new Date(data.generatedAt))} (Helsinki)${cacheNote}`;
+
+        const generatedAtMs = Date.parse(data.generatedAt);
+        if (staleNotice && !Number.isNaN(generatedAtMs)) {
+          const { isStale, ageMinutes } = classifyFreshness(generatedAtMs, Date.now());
+          staleNotice.hidden = !isStale;
+          if (isStale) {
+            staleNotice.textContent =
+              `Heads up: this program snapshot is ${ageMinutes} minutes old ` +
+              `(as of ${stampFmt.format(generatedAtMs)}, Helsinki). ` +
+              "Seat availability and cancellations may have changed since then — " +
+              "check Konsti before relying on a seat.";
+          }
+        }
+      }
+
+      if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js");
+    </script>
+
+    <style is:global>
+      :root {
+        --fg: #1a1a1a;
+        --muted: #666;
+        --line: #e2e2e2;
+        --accent: #7a1f2b;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        color: var(--fg);
+        line-height: 1.4;
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 4rem;
+      }
+      .page-header h1 { margin: 0.5rem 0 0.25rem; color: var(--accent); }
+      .meta { margin: 0; color: var(--muted); font-size: 0.9rem; }
+      .intro { margin: 0.75rem 0 0; font-size: 0.9rem; }
+      .finder-nav { font-size: 0.9rem; }
+      a { color: var(--accent); }
+      .system {
+        margin-top: 0.75rem;
+        border: 1px solid var(--line);
+        border-radius: 0.4rem;
+      }
+      .system > summary {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.8rem 0.9rem;
+        color: var(--accent);
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .system > summary:focus-visible {
+        outline: 3px solid #2f6b9a;
+        outline-offset: 3px;
+        border-radius: 0.25rem;
+      }
+      .system-count { color: var(--muted); font-size: 0.85rem; font-weight: 400; white-space: nowrap; }
+      .sessions { list-style: none; margin: 0; padding: 0 0.9rem; }
+      .session { padding: 0.9rem 0; border-top: 1px solid var(--line); }
+      .session.cancelled { opacity: 0.6; }
+      .session-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
+      .time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.9rem; min-width: 6.5rem; }
+      .title { margin: 0; font-size: 1.05rem; }
+      .session.cancelled .title { text-decoration: line-through; }
+      .badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.1rem 0.4rem; border-radius: 0.25rem; }
+      .cancelled-badge, .full-badge { background: #fbe3e3; color: var(--accent); }
+      .short { margin: 0.4rem 0 0.5rem; }
+      .facts { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.75rem; margin: 0; font-size: 0.9rem; }
+      .facts > div { display: contents; }
+      .facts dt { color: var(--muted); }
+      .facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+      .signup-detail { display: block; color: var(--muted); font-size: 0.85rem; }
+      .konsti-page { margin: 0.5rem 0 0; font-size: 0.85rem; }
+      .revolving-note { margin: 0.35rem 0 0; font-size: 0.85rem; font-weight: 600; color: #2f6b34; }
+      .content-warning { margin: 0.5rem 0; border: 1px solid #e0b400; border-left: 3px solid #b57e00; border-radius: 0.3rem; background: #fff9e6; }
+      .content-warning summary { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.6rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #7a5b00; list-style: none; }
+      .content-warning summary:focus-visible { outline: 3px solid #2f6b9a; outline-offset: 2px; }
+      .content-warning summary::-webkit-details-marker { display: none; }
+      .cw-label { text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.75rem; }
+      .cw-hint { margin-left: auto; font-size: 0.75rem; text-transform: uppercase; }
+      .cw-hint::after { content: "Show"; }
+      .content-warning[open] .cw-hint::after { content: "Hide"; }
+      .cw-text { margin: 0; padding: 0 0.6rem 0.55rem; font-size: 0.85rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .off-site-note { margin-left: 0.35rem; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: var(--muted); }
+      .stale-notice, .notice { margin: 0.75rem 0; padding: 0.7rem; background: #fbe3e3; color: var(--accent); border-radius: 0.3rem; }
+      .empty-state { color: var(--muted); padding: 1.5rem 0; }
+    </style>
+  </body>
+</html>

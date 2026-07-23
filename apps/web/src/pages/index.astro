@@ -38,6 +38,9 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         read-only — it never signs you up: online signups open in <strong>Konsti</strong>,
         others are handled at a convention desk.
       </p>
+      <nav class="finder-nav" aria-label="Finder views">
+        <a href="/game-systems/">Browse by game system</a>
+      </nav>
       {/* Controls are JS-only: revealed by the client script once the program loads. */}
       <div class="controls" hidden>
         <div class="views" role="group" aria-label="View">
@@ -119,8 +122,8 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
        * views. `?now=` overrides the device clock for testing outside con dates (Step 7).
        */
       import type { ProgramData, ProgramItem } from "@ropecon/program-core";
-      import { classifyVenue, resolveConMapLink } from "@ropecon/program-core";
       import { loadProgramData, localStorageProgramCache } from "../program/load.ts";
+      import { escapeHtml as esc, renderProgramItem } from "../program/render-card.ts";
       import {
         classifyInWindow,
         classifyJoinableSoon,
@@ -214,14 +217,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         month: "short",
       });
 
-      const esc = (text: string) =>
-        text.replace(
-          /[&<>"']/g,
-          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
-        );
       const dayHeading = (day: string) => dayHeadingFmt.format(new Date(`${day}T12:00:00Z`));
-      const timeRange = (start: string, end: string) =>
-        `${timeFmt.format(new Date(start))}–${timeFmt.format(new Date(end))}`;
       // Instant → the {day, time} halves of a datetime, for seeding the picker's inputs.
       const toInputParts = (ms: number) => {
         const [day, time] = inputFmt.format(ms).split(" ");
@@ -266,168 +262,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         return `${left} – ${dayMonthYearFmt.format(dayAsDate(lastDay))}`;
       }
 
-      // ---- Signup / capacity copy (primer §5 step 8) -----------------------------------
-
-      // Fallback copy for a physical signupType with no configured location (a `warn`,
-      // never a hard failure — see config/signup.ts). Guests still get pointed somewhere.
-      const PHYSICAL_FALLBACK_LABEL = "Signup at the info desk";
-      const PHYSICAL_FALLBACK_DETAIL = "Sign up on site — ask at the program information desk.";
-
-      function signupLabel(item: ProgramItem): string {
-        switch (item.signupMode) {
-          case "none":
-            return "No signup needed";
-          case "konsti":
-            return item.signupStrategy === "lottery" ? "Konsti lottery" : "Konsti signup";
-          case "physical":
-            return item.physicalSignupLocation?.labelEn ?? PHYSICAL_FALLBACK_LABEL;
-        }
-      }
-
-      /**
-       * The one-line explanation under the signup label:
-       *  - none:     walk in, nothing to do.
-       *  - konsti:   direct-vs-lottery, so a lottery isn't read as a confirmed seat.
-       *  - physical: where to sign up, in words — never an online action.
-       */
-      function signupDetail(item: ProgramItem): string {
-        switch (item.signupMode) {
-          case "none":
-            return "Just walk in — no signup required.";
-          case "konsti":
-            return item.signupStrategy === "lottery"
-              ? "Lottery: a signup enters you in a draw — it does not confirm a seat."
-              : "Direct signup: seats are given first come, first served.";
-          case "physical":
-            return item.physicalSignupLocation?.instructionsEn ?? PHYSICAL_FALLBACK_DETAIL;
-        }
-      }
-
-      function capacityLabel(item: ProgramItem): string | null {
-        switch (item.capacityStatus) {
-          case "not-applicable":
-            return null;
-          case "available":
-            return item.remainingSeats != null
-              ? `${item.remainingSeats} of ${item.maxAttendance} seats left`
-              : "Seats available";
-          case "full":
-            return "No seats left";
-          case "unknown":
-            return "Live seat count unavailable";
-        }
-      }
-
-      /** A Konsti session known full — the one case that earns a scannable "Full" marker. */
-      const isKonstiFull = (item: ProgramItem) =>
-        item.signupMode === "konsti" && item.capacityStatus === "full";
-
-      // Content warning (§7 "Content warnings surfaced", UX decision #7). Warnings range
-      // from empty to paragraph-length, and some sit on walk-in games a guest can enter
-      // cold — so a non-empty warning always gets a labelled indicator that reads as a
-      // warning, with the full source text one tap away and never truncated. A native
-      // <details> keeps it keyboard-accessible and its <summary> labels the control even
-      // while collapsed, so nothing serious hides behind an unlabelled tap. The raw text
-      // is rendered as-is (no taxonomy), escaped, with whitespace preserved via CSS.
-      function renderContentWarning(item: ProgramItem): string {
-        const warning = item.contentWarnings.trim();
-        if (!warning) return "";
-        return `<details class="content-warning">
-          <summary>
-            <span class="cw-icon" aria-hidden="true">⚠</span>
-            <span class="cw-label">Content warning</span>
-            <span class="cw-hint" aria-hidden="true"></span>
-          </summary>
-          <p class="cw-text">${esc(warning)}</p>
-        </details>`;
-      }
-
       // ---- Rendering -------------------------------------------------------------------
-
-      // Venue-aware map link (§7 "Map links (venue-aware)", UX decision #6). On-site
-      // Messukeskus venues link to the official con map (EN); off-site venues render
-      // plain with an "off-site" hint so a downtown museum isn't sent to the hall map;
-      // unknown venues render plain (the refresh job logs a diagnostic for review).
-      function renderLocation(location: string | null | undefined): string {
-        if (!location) return "—";
-        const mapUrl = resolveConMapLink(location, "en");
-        if (mapUrl) {
-          return `<a href="${esc(mapUrl)}" rel="noopener">${esc(location)}</a>`;
-        }
-        const offSite = classifyVenue(location).status === "off-site";
-        return `${esc(location)}${offSite ? ' <span class="off-site-note">off-site</span>' : ""}`;
-      }
-
-      function renderItem(item: ProgramItem): string {
-        const capacity = capacityLabel(item);
-        const languages =
-          item.languages.length > 0
-            ? item.languages.map(languageLabel).join(", ")
-            : languageLabel("");
-        // gameSystem is intentionally free text: preserve the published value exactly,
-        // but suppress values that contain no visible content.
-        const gameSystem = item.gameSystem.trim()
-          ? `<div><dt>System</dt><dd>${esc(item.gameSystem)}</dd></div>`
-          : "";
-        // The signup ACTION (konsti only, and never on a cancelled session): links to the
-        // same Konsti item page as the info link below, but framed as the thing to do to
-        // get a seat. Suppressed for none/physical so a walk-in/desk signup never looks
-        // like a web action.
-        const konstiLink =
-          item.signupMode === "konsti" && item.signupUrl && !item.isCancelled
-            ? ` <a class="konsti-link" href="${esc(item.signupUrl)}" rel="noopener">Sign up in Konsti ↗</a>`
-            : "";
-        // Informational Konsti page link (§7 "Konsti page link on every card", UX #4):
-        // every session has a Konsti item page regardless of signup mode, shown as a
-        // "full details" link. It is distinct from the signup ACTION above. On an active
-        // konsti card the signup action already links to this exact page, so a second link
-        // to the same destination would be confusing (UX #4) — render the info link only
-        // when the signup action isn't already carrying the guest to Konsti.
-        const konstiPageLink = konstiLink
-          ? ""
-          : `<p class="konsti-page"><a class="konsti-page-link" href="${esc(item.konstiPageUrl)}" rel="noopener">View full details on Konsti ↗</a></p>`;
-        // Venue-aware map link (§7, UX decision #6): only Messukeskus (on-site) venues
-        // get the con-map link. Off-site venues (museums, parks, pre-con spaces) render
-        // plain with an "off-site" hint; unknown venues render plain and are surfaced by
-        // the refresh job's diagnostic, never guessed onto the hall map. Copy is EN-only.
-        const location = renderLocation(item.location);
-        return `<li class="session ${item.isCancelled ? "cancelled" : ""}"
-          data-start="${esc(item.start)}"
-          data-end="${esc(item.end)}"
-          data-cancelled="${String(item.isCancelled)}"
-          data-revolving="${String(item.isRevolvingDoor)}"
-          data-signup-mode="${esc(item.signupMode)}"
-          data-capacity="${esc(item.capacityStatus)}"
-          data-languages="${esc(JSON.stringify(item.languages))}">
-          <div class="session-head">
-            <span class="time">${timeRange(item.start, item.end)}</span>
-            <h3 class="title">${esc(item.title)}</h3>
-            ${item.isCancelled ? '<span class="badge cancelled-badge">Cancelled</span>' : ""}
-            ${!item.isCancelled && isKonstiFull(item) ? '<span class="badge full-badge">Full</span>' : ""}
-          </div>
-          ${
-            !item.isCancelled && item.isRevolvingDoor
-              ? '<p class="revolving-note">You can join mid-session.</p>'
-              : ""
-          }
-          ${item.shortDescription ? `<p class="short">${esc(item.shortDescription)}</p>` : ""}
-          ${renderContentWarning(item)}
-          <dl class="facts">
-            ${gameSystem}
-            <div><dt>Language</dt><dd>${esc(languages)}</dd></div>
-            <div><dt>Location</dt><dd>${location}</dd></div>
-            <div>
-              <dt>Signup</dt>
-              <dd>
-                <span class="signup-label">${esc(signupLabel(item))}</span>${konstiLink}
-                <span class="signup-detail">${esc(signupDetail(item))}</span>
-              </dd>
-            </div>
-            ${capacity ? `<div><dt>Capacity</dt><dd>${esc(capacity)}</dd></div>` : ""}
-          </dl>
-          ${konstiPageLink}
-        </li>`;
-      }
 
       function renderProgram(data: ProgramData): void {
         // Sort by start, then group into day sections.
@@ -442,7 +277,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
           .map(
             (group) =>
               `<section class="day" data-day="${esc(group.day)}"><h2>${esc(dayHeading(group.day))}</h2>` +
-              `<ul class="sessions">${group.items.map(renderItem).join("")}</ul></section>`,
+              `<ul class="sessions">${group.items.map((item) => renderProgramItem(item)).join("")}</ul></section>`,
           )
           .join("");
       }

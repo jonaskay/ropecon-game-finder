@@ -58,4 +58,23 @@ describe("refresh job", () => {
     await expect(runRefresh({ fetchPayload: async () => { throw new Error("timeout"); }, storage, logger, now, executionId: "fail" })).rejects.toThrow("timeout");
     expect(storage.writes).toBe(0);
   });
+
+  it("logs an unknown-venue diagnostic per distinct unrecognised location, deduped", async () => {
+    // The synthetic fixture uses placeholder venues ("Hall A", "Outdoor stage", …) that
+    // match no on-site/off-site rule, so every published location is `unknown` here —
+    // exactly the case the diagnostic exists to surface. Assert each distinct venue is
+    // logged once (dedup), never once per session, and the write still proceeds.
+    const storage = store();
+    const venueLogger = { log: vi.fn() };
+    await runRefresh({ fetchPayload: async () => payload, storage, logger: venueLogger, now, executionId: "venue" });
+    expect(storage.writes).toBe(1);
+
+    const unknownVenues = venueLogger.log.mock.calls
+      .filter(([level, code]) => level === "warn" && code === "unknown_venue")
+      .map(([, , data]) => (data as { location: string }).location);
+
+    expect(unknownVenues.length).toBeGreaterThan(0);
+    // Deduped: no venue is reported twice even though several sessions share a location.
+    expect(new Set(unknownVenues).size).toBe(unknownVenues.length);
+  });
 });

@@ -13,6 +13,7 @@
     "typecheck": "bun run --filter '*' typecheck",
     "audit:report": "bun scripts/audit-konsti.ts report",
     "audit:check": "bun scripts/audit-konsti.ts check",
+    "venue:check": "bun scripts/venue-check.ts",
     "check:no-fallback": "! rg -n '/program[.]json' apps/web/src apps/web/public"
   },
   "devDependencies": {

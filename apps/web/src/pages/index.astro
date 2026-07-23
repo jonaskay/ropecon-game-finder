@@ -87,7 +87,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
        * views. `?now=` overrides the device clock for testing outside con dates (Step 7).
        */
       import type { ProgramData, ProgramItem } from "@ropecon/program-core";
-      import { conventionMapUrl, helsinkiWallClockToMs } from "@ropecon/program-core";
+      import { classifyVenue, helsinkiWallClockToMs, resolveConMapLink } from "@ropecon/program-core";
       import { loadProgramData, localStorageProgramCache } from "../program/load.ts";
       import {
         classifyInWindow,
@@ -214,15 +214,31 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 
       // ---- Rendering -------------------------------------------------------------------
 
+      // Venue-aware map link (§7 "Map links (venue-aware)", UX decision #6). On-site
+      // Messukeskus venues link to the official con map (EN); off-site venues render
+      // plain with an "off-site" hint so a downtown museum isn't sent to the hall map;
+      // unknown venues render plain (the refresh job logs a diagnostic for review).
+      function renderLocation(location: string | null | undefined): string {
+        if (!location) return "—";
+        const mapUrl = resolveConMapLink(location, "en");
+        if (mapUrl) {
+          return `<a href="${esc(mapUrl)}" rel="noopener">${esc(location)}</a>`;
+        }
+        const offSite = classifyVenue(location).status === "off-site";
+        return `${esc(location)}${offSite ? ' <span class="off-site-note">off-site</span>' : ""}`;
+      }
+
       function renderItem(item: ProgramItem): string {
         const capacity = capacityLabel(item);
         const konstiLink =
           item.signupMode === "konsti" && item.signupUrl && !item.isCancelled
             ? ` <a class="konsti-link" href="${esc(item.signupUrl)}" rel="noopener">open in Konsti</a>`
             : "";
-        const location = item.location
-          ? `<a href="${esc(conventionMapUrl(item.location))}" rel="noopener">${esc(item.location)}</a>`
-          : "—";
+        // Venue-aware map link (§7, UX decision #6): only Messukeskus (on-site) venues
+        // get the con-map link. Off-site venues (museums, parks, pre-con spaces) render
+        // plain with an "off-site" hint; unknown venues render plain and are surfaced by
+        // the refresh job's diagnostic, never guessed onto the hall map. Copy is EN-only.
+        const location = renderLocation(item.location);
         return `<li class="session ${item.isCancelled ? "cancelled" : ""}"
           data-start="${esc(item.start)}"
           data-end="${esc(item.end)}"
@@ -775,6 +791,15 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         display: block;
         color: var(--muted);
         font-size: 0.85rem;
+      }
+
+      .off-site-note {
+        margin-left: 0.35rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: var(--muted);
       }
     </style>
   </body>

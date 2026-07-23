@@ -160,6 +160,32 @@ describe("signup mode / url (primer §3 'Signup model')", () => {
   });
 });
 
+describe("konsti page link on every item (primer §3, §7; issue-04)", () => {
+  it("populates konstiPageUrl for every normalised item, from the slug", () => {
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) {
+      expect(item.konstiPageUrl).toBe(`https://ropekonsti.fi/program/item/${item.slug}`);
+    }
+  });
+
+  it("konstiPageUrl is always non-null while signupUrl is null for non-konsti signup", () => {
+    // konsti: the informational page link and the actionable signup link coincide.
+    const konsti = only({ signupType: "konsti", programItemId: "k-1" });
+    expect(konsti.konstiPageUrl).toBe("https://ropekonsti.fi/program/item/k-1");
+    expect(konsti.signupUrl).toBe("https://ropekonsti.fi/program/item/k-1");
+
+    // physical: page link present, but no signup action link.
+    const physical = only({ signupType: "ropelarp", programItemId: "p-1" });
+    expect(physical.konstiPageUrl).toBe("https://ropekonsti.fi/program/item/p-1");
+    expect(physical.signupUrl).toBeNull();
+
+    // none / walk-in: page link present, but no signup action link.
+    const walkIn = only({ signupType: "notRequired", programItemId: "n-1" });
+    expect(walkIn.konstiPageUrl).toBe("https://ropekonsti.fi/program/item/n-1");
+    expect(walkIn.signupUrl).toBeNull();
+  });
+});
+
 describe("scalar derivations (primer §3 'Derived session fields')", () => {
   it("derives cancellation from state", () => {
     expect(bySlug["pi-002"].isCancelled).toBe(true);

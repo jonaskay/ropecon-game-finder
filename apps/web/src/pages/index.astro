@@ -293,10 +293,23 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 
       function renderItem(item: ProgramItem): string {
         const capacity = capacityLabel(item);
+        // The signup ACTION (konsti only, and never on a cancelled session): links to the
+        // same Konsti item page as the info link below, but framed as the thing to do to
+        // get a seat. Suppressed for none/physical so a walk-in/desk signup never looks
+        // like a web action.
         const konstiLink =
           item.signupMode === "konsti" && item.signupUrl && !item.isCancelled
-            ? ` <a class="konsti-link" href="${esc(item.signupUrl)}" rel="noopener">open in Konsti</a>`
+            ? ` <a class="konsti-link" href="${esc(item.signupUrl)}" rel="noopener">Sign up in Konsti ↗</a>`
             : "";
+        // Informational Konsti page link (§7 "Konsti page link on every card", UX #4):
+        // every session has a Konsti item page regardless of signup mode, shown as a
+        // "full details" link. It is distinct from the signup ACTION above. On an active
+        // konsti card the signup action already links to this exact page, so a second link
+        // to the same destination would be confusing (UX #4) — render the info link only
+        // when the signup action isn't already carrying the guest to Konsti.
+        const konstiPageLink = konstiLink
+          ? ""
+          : `<p class="konsti-page"><a class="konsti-page-link" href="${esc(item.konstiPageUrl)}" rel="noopener">View full details on Konsti ↗</a></p>`;
         // Venue-aware map link (§7, UX decision #6): only Messukeskus (on-site) venues
         // get the con-map link. Off-site venues (museums, parks, pre-con spaces) render
         // plain with an "off-site" hint; unknown venues render plain and are surfaced by
@@ -333,6 +346,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
             </div>
             ${capacity ? `<div><dt>Capacity</dt><dd>${esc(capacity)}</dd></div>` : ""}
           </dl>
+          ${konstiPageLink}
         </li>`;
       }
 
@@ -982,6 +996,13 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       .signup-detail {
         display: block;
         color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      /* Informational Konsti page link (§7, UX #4): a quiet "full details" link on every
+         card, visually secondary to the signup action so the two never read as rival CTAs. */
+      .konsti-page {
+        margin: 0.5rem 0 0;
         font-size: 0.85rem;
       }
 

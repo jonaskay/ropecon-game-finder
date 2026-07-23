@@ -5,7 +5,7 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 
 function isProgramItem(value: unknown): value is ProgramItem {
   if (!isObject(value)) return false;
-  return ["slug", "title", "start", "end", "day", "signupMode", "capacityStatus"].every(
+  return ["slug", "title", "start", "end", "day", "signupMode", "capacityStatus", "konstiPageUrl"].every(
     key => typeof value[key] === "string",
   ) && typeof value.isCancelled === "boolean" && typeof value.isGaming === "boolean" &&
     Array.isArray(value.tags) && value.tags.every(tag => typeof tag === "string") &&

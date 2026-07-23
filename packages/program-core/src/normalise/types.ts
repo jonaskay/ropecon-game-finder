@@ -49,6 +49,8 @@ export interface ProgramItem {
   isPreConventionWeek: boolean;
   isRevolvingDoor: boolean;
 
+  konstiPageUrl: string; // Konsti item page — always present (every session has one)
+
   signupType: string;
   signupMode: SignupMode;
   signupStrategy: string;

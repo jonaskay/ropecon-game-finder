@@ -18,7 +18,7 @@ import { PHYSICAL_SIGNUP_TYPES, signupMode, type SignupMode } from "../config/si
 import { CANCELLATION_STATE, PRE_CONVENTION_WEEK_TAG } from "../config/taxonomy.ts";
 import type { CapacityStatus, ProgramItem } from "./types.ts";
 
-/** Base of the guest-facing Konsti signup link for a single program item. */
+/** Base of the guest-facing Konsti item page for a single program item. */
 const KONSTI_ITEM_URL_BASE = "https://ropekonsti.fi/program/item/";
 
 interface CapacityFields {
@@ -90,6 +90,10 @@ function toProgramItem(item: ProjectedItem): ProgramItem {
   const p = item.programItem;
   const mode = signupMode(p.signupType);
   const capacity = deriveCapacity(mode, item.userCount, p.maxAttendance);
+  // Every session has a Konsti item page regardless of signup mode (primer §3
+  // "Derived session fields"). It is the informational "full details" link shown on
+  // every card; the actionable signupUrl is a subset of it, present only for konsti.
+  const konstiPageUrl = KONSTI_ITEM_URL_BASE + p.programItemId;
 
   return {
     slug: p.programItemId,
@@ -123,11 +127,13 @@ function toProgramItem(item: ProjectedItem): ProgramItem {
     isPreConventionWeek: p.tags.includes(PRE_CONVENTION_WEEK_TAG),
     isRevolvingDoor: p.revolvingDoor,
 
+    konstiPageUrl,
+
     signupType: p.signupType,
     signupMode: mode,
     signupStrategy: p.signupStrategy,
     requiresSignup: mode !== "none",
-    signupUrl: mode === "konsti" ? KONSTI_ITEM_URL_BASE + p.programItemId : null,
+    signupUrl: mode === "konsti" ? konstiPageUrl : null,
     physicalSignupLocation: PHYSICAL_SIGNUP_TYPES[p.signupType] ?? null,
 
     ...capacity,

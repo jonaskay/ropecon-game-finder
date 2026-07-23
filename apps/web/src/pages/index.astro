@@ -71,6 +71,9 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
     <main>
       {/* Text is set by the client script per active view / load failure. */}
       <p class="empty-state" hidden></p>
+      {/* Orientation for the legitimately-empty joinable-soon default (§6, UX #2):
+          populated and revealed by the client script from the data-derived model. */}
+      <section class="orientation" aria-live="polite" hidden></section>
       <div id="program"></div>
     </main>
     <noscript>This finder needs JavaScript to load the program from its published data service.</noscript>
@@ -98,6 +101,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         type TimeWindowInput,
       } from "../classify/window.ts";
       import { classifyFreshness } from "../classify/freshness.ts";
+      import { buildOrientation, type OrientationModel } from "../classify/orientation.ts";
 
       type View = "soon" | "walkins" | "slot" | "all";
 
@@ -108,6 +112,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       const controls = document.querySelector<HTMLElement>(".controls");
       const countEl = document.querySelector<HTMLElement>(".result-count");
       const emptyEl = document.querySelector<HTMLElement>(".empty-state");
+      const orientationEl = document.querySelector<HTMLElement>(".orientation");
       const nowNotice = document.querySelector<HTMLElement>(".now-notice");
       const staleNotice = document.querySelector<HTMLElement>(".stale-notice");
       const viewButtons = [...document.querySelectorAll<HTMLButtonElement>(".view-btn")];
@@ -155,6 +160,44 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       const timeRange = (start: string, end: string) =>
         `${timeFmt.format(new Date(start))}–${timeFmt.format(new Date(end))}`;
       const toInputValue = (ms: number) => inputFmt.format(ms).replace(" ", "T");
+
+      // Orientation-state date formatters (§6 empty state). A con day is a YYYY-MM-DD
+      // Helsinki calendar day; noon UTC lands on that same day in Helsinki (UTC+3 in July).
+      const weekdayFmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Helsinki",
+        weekday: "long",
+      });
+      const dayMonthFmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Helsinki",
+        day: "numeric",
+        month: "long",
+      });
+      const dayMonthYearFmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Helsinki",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+      const monthYearFmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Helsinki",
+        month: "long",
+        year: "numeric",
+      });
+      const dayAsDate = (day: string) => new Date(`${day}T12:00:00Z`);
+      const weekdayName = (day: string) => weekdayFmt.format(dayAsDate(day));
+
+      // "24–26 July 2026" / "31 July – 2 August 2026" / "24 July 2026", derived from the data.
+      function formatDaySpan(firstDay: string, lastDay: string): string {
+        if (firstDay === lastDay) return dayMonthYearFmt.format(dayAsDate(firstDay));
+        const [fy, fm, fd] = firstDay.split("-");
+        const [ly, lm] = lastDay.split("-");
+        const ld = lastDay.split("-")[2];
+        if (fy === ly && fm === lm) {
+          return `${Number(fd)}–${Number(ld)} ${monthYearFmt.format(dayAsDate(lastDay))}`;
+        }
+        const left = fy === ly ? dayMonthFmt.format(dayAsDate(firstDay)) : dayMonthYearFmt.format(dayAsDate(firstDay));
+        return `${left} – ${dayMonthYearFmt.format(dayAsDate(lastDay))}`;
+      }
 
       // ---- Signup / capacity copy (primer §5 step 8) -----------------------------------
 
@@ -284,7 +327,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         programRoot.innerHTML = days
           .map(
             (group) =>
-              `<section class="day"><h2>${esc(dayHeading(group.day))}</h2>` +
+              `<section class="day" data-day="${esc(group.day)}"><h2>${esc(dayHeading(group.day))}</h2>` +
               `<ul class="sessions">${group.items.map(renderItem).join("")}</ul></section>`,
           )
           .join("");
@@ -361,7 +404,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         keep: (input: TimeWindowInput) => { included: boolean; badge: string | null },
         summarise: (shown: number) => string,
         emptyText: string,
-      ): void {
+      ): number {
         let shown = 0;
         for (const { el, input } of sessions) {
           const { included, badge } = keep(input);
@@ -380,9 +423,80 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
           emptyEl.hidden = shown > 0;
         }
         if (countEl) countEl.textContent = summarise(shown);
+        return shown;
+      }
+
+      // ---- Orientation empty state (§6, UX decision #2) --------------------------------
+      // When the joinable-soon default legitimately resolves to zero, orient the guest
+      // instead of showing a bare "no results": when the con runs (dates DERIVED from the
+      // data span), what's on later today, and a one-tap route to the full program / next
+      // active day. The model is data-derived and depends only on the fixed resolved now,
+      // so it is built once at boot and merely toggled thereafter.
+
+      let orientation: OrientationModel | null = null;
+
+      // Switch to the full program and scroll a given con day into view.
+      function jumpToDay(day: string): void {
+        setView("all");
+        programRoot.querySelector<HTMLElement>(`.day[data-day="${CSS.escape(day)}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function renderOrientation(model: OrientationModel): void {
+        if (!orientationEl) return;
+        const parts: string[] = [
+          '<p class="orientation-lead">Nothing is joinable in the next hour right now — ' +
+            "here's what's coming up.</p>",
+        ];
+
+        if (model.mainConSpan) {
+          const { firstDay, lastDay } = model.mainConSpan;
+          const weekdays =
+            firstDay === lastDay
+              ? weekdayName(firstDay)
+              : `${weekdayName(firstDay)}–${weekdayName(lastDay)}`;
+          parts.push(
+            `<p>The main convention runs <strong>${esc(weekdays)}, ` +
+              `${esc(formatDaySpan(firstDay, lastDay))}</strong>.` +
+              (model.isPreConvention
+                ? " It's currently pre-convention week — a lighter program of early sessions."
+                : "") +
+              "</p>",
+          );
+        }
+
+        if (model.laterToday.count > 0 && model.laterToday.nextStartMs != null) {
+          const n = model.laterToday.count;
+          parts.push(
+            `<p><strong>${n}</strong> more session${n === 1 ? "" : "s"} ` +
+              `${n === 1 ? "starts" : "start"} later today — the next at ` +
+              `<strong>${esc(timeFmt.format(model.laterToday.nextStartMs))}</strong> (Helsinki).</p>`,
+          );
+        }
+
+        const actions = ['<button type="button" class="orientation-action" data-action="all">See the full program</button>'];
+        if (model.laterToday.count > 0 && model.today) {
+          actions.push(
+            `<button type="button" class="orientation-action" data-action="jump" data-day="${esc(model.today)}">` +
+              "Jump to later today</button>",
+          );
+        }
+        if (model.nextActiveDay) {
+          const d = model.nextActiveDay;
+          actions.push(
+            `<button type="button" class="orientation-action" data-action="jump" data-day="${esc(d.day)}">` +
+              `Next: ${esc(weekdayName(d.day))} ${esc(dayMonthFmt.format(dayAsDate(d.day)))} ` +
+              `(${d.count} session${d.count === 1 ? "" : "s"})</button>`,
+          );
+        }
+        parts.push(`<div class="orientation-actions">${actions.join("")}</div>`);
+
+        orientationEl.innerHTML = parts.join("");
       }
 
       function render(view: View): void {
+        // The orientation state belongs to the empty joinable-soon default only.
+        if (orientationEl) orientationEl.hidden = true;
         if (view === "all") {
           revealAll();
         } else if (view === "walkins") {
@@ -419,7 +533,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
             "Nothing joinable in this time slot. Try another time or All sessions.",
           );
         } else {
-          applyFilter(
+          const shown = applyFilter(
             (input) => {
               const { included, overlap } = classifyJoinableSoon(input, nowMs);
               return {
@@ -430,6 +544,13 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
             (shown) => (shown === 0 ? "No joinable sessions" : `${shown} joinable in the next hour`),
             "Nothing joinable in the next hour. Switch to All sessions to see the full program.",
           );
+          // Zero joinable-soon is legitimate (pre-con / early in the day): orient the guest
+          // instead of leaving the bare empty-state line to carry the whole first impression.
+          if (shown === 0 && orientation) {
+            renderOrientation(orientation);
+            orientationEl!.hidden = false;
+            if (emptyEl) emptyEl.hidden = true;
+          }
         }
       }
 
@@ -474,6 +595,15 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         const data = result.data;
         renderProgram(data);
         collectSessions();
+
+        // Data-derived orientation for the empty joinable-soon default (§6, UX #2).
+        orientation = buildOrientation(data.items, nowMs);
+        orientationEl?.addEventListener("click", (event) => {
+          const btn = (event.target as HTMLElement).closest<HTMLElement>(".orientation-action");
+          if (!btn) return;
+          if (btn.dataset.action === "all") setView("all");
+          else if (btn.dataset.action === "jump" && btn.dataset.day) jumpToDay(btn.dataset.day);
+        });
 
         const cacheNote = result.status === "ready-cache" ? " · offline cached copy" : "";
         statusEl.textContent =
@@ -730,6 +860,47 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       .empty-state {
         color: var(--muted);
         padding: 1.5rem 0;
+      }
+
+      .orientation {
+        margin: 1.25rem 0;
+        padding: 1rem 1.1rem;
+        background: #f6f1f2;
+        border-left: 3px solid var(--accent);
+        border-radius: 0.4rem;
+      }
+
+      .orientation p {
+        margin: 0 0 0.55rem;
+        font-size: 0.95rem;
+      }
+
+      .orientation-lead {
+        font-weight: 600;
+      }
+
+      .orientation-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.85rem;
+      }
+
+      .orientation-action {
+        appearance: none;
+        border: 1px solid var(--accent);
+        background: #fff;
+        color: var(--accent);
+        font: inherit;
+        font-size: 0.85rem;
+        padding: 0.4rem 0.7rem;
+        border-radius: 0.4rem;
+        cursor: pointer;
+      }
+
+      .orientation-action[data-action="all"] {
+        background: var(--accent);
+        color: #fff;
       }
 
       .notice {

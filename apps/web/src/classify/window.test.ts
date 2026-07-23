@@ -39,12 +39,26 @@ describe("classifyOverlap", () => {
   const from = NOW;
   const to = NOW + JOINABLE_WINDOW_MS;
 
-  it("is startable when the start falls inside the window", () => {
-    expect(classifyOverlap(item({ start: at(30), end: at(120) }), from, to)).toBe("startable");
+  it("is startable when a non-revolving session fits inside the window", () => {
+    expect(classifyOverlap(item({ start: at(30), end: at(60) }), from, to)).toBe("startable");
   });
 
-  it("treats a start exactly at `from` as inside the window", () => {
+  it("includes a non-revolving session that fits the window exactly", () => {
     expect(classifyOverlap(item({ start: at(0), end: at(60) }), from, to)).toBe("startable");
+  });
+
+  it("excludes a non-revolving session that overruns `to`", () => {
+    expect(classifyOverlap(item({ start: at(30), end: at(61) }), from, to)).toBe("none");
+  });
+
+  it("includes a revolving-door session that overruns `to`", () => {
+    expect(
+      classifyOverlap(
+        item({ start: at(30), end: at(120), isRevolvingDoor: true }),
+        from,
+        to,
+      ),
+    ).toBe("startable");
   });
 
   it("excludes a start exactly at `to` (strict upper bound)", () => {
@@ -135,6 +149,28 @@ describe("classifyJoinableSoon", () => {
 });
 
 describe("classifyInWindow", () => {
+  it("includes a non-revolving session fully contained in the window", () => {
+    expect(
+      classifyInWindow(item({ start: at(10), end: at(60) }), NOW, NOW + 60 * 60_000),
+    ).toEqual({ included: true, overlap: "startable", reason: null });
+  });
+
+  it("excludes a non-revolving session that ends after the window", () => {
+    expect(
+      classifyInWindow(item({ start: at(10), end: at(61) }), NOW, NOW + 60 * 60_000),
+    ).toEqual({ included: false, overlap: "none", reason: "no-overlap" });
+  });
+
+  it("includes an overlapping revolving-door session that ends after the window", () => {
+    expect(
+      classifyInWindow(
+        item({ start: at(10), end: at(180), isRevolvingDoor: true }),
+        NOW,
+        NOW + 60 * 60_000,
+      ),
+    ).toEqual({ included: true, overlap: "startable", reason: null });
+  });
+
   it("keeps a revolving session running at the future window start", () => {
     expect(
       classifyInWindow(
@@ -145,13 +181,31 @@ describe("classifyInWindow", () => {
     ).toEqual({ included: true, overlap: "join-in-progress", reason: null });
   });
 
-  it("drops cancelled and full Konsti sessions", () => {
-    expect(classifyInWindow(item({ isCancelled: true }), NOW, NOW + 60 * 60_000).reason).toBe(
-      "cancelled",
-    );
-    expect(classifyInWindow(item({ capacityStatus: "full" }), NOW, NOW + 60 * 60_000).reason).toBe(
-      "konsti-full",
-    );
+  it("excludes a non-revolving session already in progress at `from`", () => {
+    expect(
+      classifyInWindow(item({ start: at(-30), end: at(30) }), NOW, NOW + 60 * 60_000),
+    ).toEqual({
+      included: false,
+      overlap: "in-progress-no-join",
+      reason: "in-progress-no-join",
+    });
+  });
+
+  it("applies cancelled and full-Konsti exclusions to otherwise fitting sessions", () => {
+    expect(
+      classifyInWindow(
+        item({ end: at(50), isCancelled: true }),
+        NOW,
+        NOW + 60 * 60_000,
+      ).reason,
+    ).toBe("cancelled");
+    expect(
+      classifyInWindow(
+        item({ end: at(50), capacityStatus: "full" }),
+        NOW,
+        NOW + 60 * 60_000,
+      ).reason,
+    ).toBe("konsti-full");
   });
 
   it("uses strict window boundaries", () => {

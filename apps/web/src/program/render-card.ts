@@ -1,7 +1,7 @@
 import {
   classifyVenue,
   resolveConMapLink,
-  type ProgramItem,
+  type ProgramItemV2,
 } from "@ropecon/program-core";
 import { languageLabel } from "../classify/language.ts";
 
@@ -22,46 +22,69 @@ export const escapeHtml = (text: string) =>
       })[character]!,
   );
 
-function signupLabel(item: ProgramItem): string {
-  switch (item.signupMode) {
+function signupLabel(item: ProgramItemV2): string {
+  switch (item.signupProvider) {
     case "none":
       return "No signup needed";
     case "konsti":
       return item.signupStrategy === "lottery" ? "Konsti lottery" : "Konsti signup";
     case "physical":
       return item.physicalSignupLocation?.labelEn ?? PHYSICAL_FALLBACK_LABEL;
+    case "other":
+      return item.requiresSignup === true ? "Signup required" : "Signup information unavailable";
   }
 }
 
-function signupDetail(item: ProgramItem): string {
-  switch (item.signupMode) {
+function isKonstiUrl(value: string | null): value is string {
+  if (!value) return false;
+  try {
+    return new URL(value).hostname === "ropekonsti.fi";
+  } catch {
+    return false;
+  }
+}
+
+function signupDetail(item: ProgramItemV2): string {
+  switch (item.signupProvider) {
     case "none":
       return "Just walk in — no signup required.";
     case "konsti":
-      return item.signupStrategy === "lottery"
-        ? "Lottery: a signup enters you in a draw — it does not confirm a seat."
-        : "Direct signup: seats are given first come, first served.";
+      if (!item.signupUrl) {
+        return "Live signup information is unavailable. Check the program details in Kompassi.";
+      }
+      if (item.signupStrategy === "lottery") {
+        return "Lottery: a signup enters you in a draw — it does not confirm a seat.";
+      }
+      if (item.signupStrategy === "direct") {
+        return "Direct signup: seats are given first come, first served.";
+      }
+      return "Signup is handled in Konsti; live seat information may be unavailable.";
     case "physical":
       return item.physicalSignupLocation?.instructionsEn ?? PHYSICAL_FALLBACK_DETAIL;
+    case "other":
+      return "Check the program details in Kompassi for signup instructions.";
   }
 }
 
-function capacityLabel(item: ProgramItem): string | null {
+function capacityLabel(item: ProgramItemV2): string | null {
   switch (item.capacityStatus) {
     case "not-applicable":
       return null;
     case "available":
+      if (item.availabilitySource !== "konsti") return "Live seat count unavailable";
       return item.remainingSeats != null
         ? `${item.remainingSeats} of ${item.maxAttendance} seats left`
         : "Seats available";
     case "full":
-      return "No seats left";
+      return item.availabilitySource === "konsti"
+        ? "No seats left"
+        : "Live seat count unavailable";
     case "unknown":
       return "Live seat count unavailable";
   }
 }
 
-function renderContentWarning(item: ProgramItem): string {
+function renderContentWarning(item: ProgramItemV2): string {
   const warning = item.contentWarnings.trim();
   if (!warning) return "";
   return `<details class="content-warning">
@@ -103,7 +126,7 @@ const dayTimeFormat = new Intl.DateTimeFormat("en-GB", {
  * All source text is escaped here so new views cannot accidentally diverge.
  */
 export function renderProgramItem(
-  item: ProgramItem,
+  item: ProgramItemV2,
   options: { includeDay?: boolean } = {},
 ): string {
   const capacity = capacityLabel(item);
@@ -114,13 +137,14 @@ export function renderProgramItem(
   const gameSystem = item.gameSystem.trim()
     ? `<div><dt>System</dt><dd>${escapeHtml(item.gameSystem)}</dd></div>`
     : "";
-  const konstiLink =
-    item.signupMode === "konsti" && item.signupUrl && !item.isCancelled
-      ? ` <a class="konsti-link" href="${escapeHtml(item.signupUrl)}" rel="noopener">Sign up in Konsti ↗</a>`
+  const signupLink =
+    item.signupProvider !== "none" && item.signupUrl && !item.isCancelled
+      ? isKonstiUrl(item.signupUrl) && item.signupProvider === "konsti"
+        ? ` <a class="signup-link konsti-link" href="${escapeHtml(item.signupUrl)}" rel="noopener">Sign up in Konsti ↗</a>`
+        : ` <a class="signup-link" href="${escapeHtml(item.signupUrl)}" rel="noopener">Open signup information ↗</a>`
       : "";
-  const konstiPageLink = konstiLink
-    ? ""
-    : `<p class="konsti-page"><a class="konsti-page-link" href="${escapeHtml(item.konstiPageUrl)}" rel="noopener">View full details on Konsti ↗</a></p>`;
+  const kompassiLink =
+    `<p class="kompassi-page"><a class="kompassi-page-link" href="${escapeHtml(item.kompassiUrl)}" rel="noopener">View in Kompassi ↗</a></p>`;
   const location = renderLocation(item.location);
   const timeRange = options.includeDay
     ? `${dayTimeFormat.format(new Date(item.start))}–${timeFormat.format(new Date(item.end))}`
@@ -131,7 +155,8 @@ export function renderProgramItem(
     data-end="${escapeHtml(item.end)}"
     data-cancelled="${String(item.isCancelled)}"
     data-revolving="${String(item.isRevolvingDoor)}"
-    data-signup-mode="${escapeHtml(item.signupMode)}"
+    data-signup-provider="${escapeHtml(item.signupProvider)}"
+    data-availability-source="${item.availabilitySource ?? ""}"
     data-capacity="${escapeHtml(item.capacityStatus)}"
     data-languages="${escapeHtml(JSON.stringify(item.languages))}">
     <div class="session-head">
@@ -140,7 +165,7 @@ export function renderProgramItem(
       ${item.isCancelled ? '<span class="badge cancelled-badge">Cancelled</span>' : ""}
       ${
         !item.isCancelled &&
-        item.signupMode === "konsti" &&
+        item.availabilitySource === "konsti" &&
         item.capacityStatus === "full"
           ? '<span class="badge full-badge">Full</span>'
           : ""
@@ -160,12 +185,12 @@ export function renderProgramItem(
       <div>
         <dt>Signup</dt>
         <dd>
-          <span class="signup-label">${escapeHtml(signupLabel(item))}</span>${konstiLink}
+          <span class="signup-label">${escapeHtml(signupLabel(item))}</span>${signupLink}
           <span class="signup-detail">${escapeHtml(signupDetail(item))}</span>
         </dd>
       </div>
       ${capacity ? `<div><dt>Capacity</dt><dd>${escapeHtml(capacity)}</dd></div>` : ""}
     </dl>
-    ${konstiPageLink}
+    ${kompassiLink}
   </li>`;
 }

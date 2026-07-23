@@ -44,3 +44,21 @@ variable "konsti_url" {
   type        = string
   default     = "https://ropekonsti.fi/api/program-items"
 }
+
+variable "kompassi_url" {
+  description = "URL for the Kompassi GraphQL API"
+  type        = string
+  default     = "https://kompassi.eu/graphql"
+}
+
+variable "kompassi_event_slug" {
+  description = "Kompassi event slug whose public schedule is published"
+  type        = string
+  default     = "ropecon2026"
+}
+
+variable "kompassi_locale" {
+  description = "Locale used for translated Kompassi schedule fields"
+  type        = string
+  default     = "en"
+}

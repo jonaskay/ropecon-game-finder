@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  fetchKompassiSchedule,
+  projectResponse,
+} from "@ropecon/program-core";
 import { readEnvironment } from "./environment.ts";
 import { runRefresh } from "./run-refresh.ts";
 import { jsonLogger } from "./safe-logging.ts";
@@ -12,13 +16,20 @@ export async function main(): Promise<void> {
     now: () => new Date(),
     logger: jsonLogger,
     storage: cloudProgramStorage(env.bucket, env.object),
-    fetchPayload: async () => {
+    kompassiEventSlug: env.kompassiEventSlug,
+    fetchKompassi: () => fetchKompassiSchedule({
+      url: env.kompassiUrl,
+      eventSlug: env.kompassiEventSlug,
+      locale: env.kompassiLocale,
+      signal: AbortSignal.timeout(20_000),
+    }),
+    fetchKonsti: async () => {
       const response = await fetch(env.konstiUrl, {
         headers: { Accept: "application/json", "User-Agent": "ropecon-program-refresh/1.0" },
         signal: AbortSignal.timeout(20_000),
       });
       if (!response.ok) throw new Error(`Konsti request failed: ${response.status}`);
-      return response.json();
+      return projectResponse(await response.json());
     },
   });
 }

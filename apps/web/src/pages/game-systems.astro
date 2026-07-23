@@ -19,8 +19,8 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       <h1>Game systems</h1>
       <p class="meta" id="status" aria-live="polite">Loading the latest program…</p>
       <p class="intro">
-        Browse every game system represented in the current program. Expand any system
-        to see its scheduled sessions. Konsti remains authoritative for program and signup details.
+        Browse sessions whose game system is available from Konsti enrichment.
+        Sessions without a game-system name still appear in the chronological finder.
       </p>
       <p class="stale-notice" role="alert" hidden></p>
     </header>
@@ -62,7 +62,8 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 
         if (groups.length === 0 && emptyEl) {
           emptyEl.hidden = false;
-          emptyEl.textContent = "No game systems are listed in the current program.";
+          emptyEl.textContent =
+            "No game-system names are available yet. All sessions remain listed in the chronological finder.";
         }
 
         const cacheNote = result.status === "ready-cache" ? " · offline cached copy" : "";
@@ -79,7 +80,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
               `Heads up: this program snapshot is ${ageMinutes} minutes old ` +
               `(as of ${stampFmt.format(generatedAtMs)}, Helsinki). ` +
               "Seat availability and cancellations may have changed since then — " +
-              "check Konsti before relying on a seat.";
+              "check the program details in Kompassi before relying on a seat.";
           }
         }
       }
@@ -143,7 +144,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       .facts dt { color: var(--muted); }
       .facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
       .signup-detail { display: block; color: var(--muted); font-size: 0.85rem; }
-      .konsti-page { margin: 0.5rem 0 0; font-size: 0.85rem; }
+      .kompassi-page { margin: 0.5rem 0 0; font-size: 0.85rem; }
       .revolving-note { margin: 0.35rem 0 0; font-size: 0.85rem; font-weight: 600; color: #2f6b34; }
       .content-warning { margin: 0.5rem 0; border: 1px solid #e0b400; border-left: 3px solid #b57e00; border-radius: 0.3rem; background: #fff9e6; }
       .content-warning summary { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.6rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #7a5b00; list-style: none; }

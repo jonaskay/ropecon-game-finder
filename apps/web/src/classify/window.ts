@@ -10,7 +10,11 @@
  * never compare the ISO strings lexically or hand-roll offsets (primer §6, constraints).
  */
 
-import type { CapacityStatus, SignupMode } from "@ropecon/program-core";
+import type {
+  AvailabilitySource,
+  CapacityStatus,
+  SignupProvider,
+} from "@ropecon/program-core";
 
 /** "starting within one hour" — the joinable-soon window length (primer §6). */
 export const JOINABLE_WINDOW_MS = 60 * 60 * 1000;
@@ -20,8 +24,9 @@ export interface TimeWindowInput {
   start: string; // UTC ISO-8601
   end: string; // UTC ISO-8601
   isCancelled: boolean;
-  isRevolvingDoor: boolean;
-  signupMode: SignupMode;
+  isRevolvingDoor: boolean | null;
+  signupProvider: SignupProvider;
+  availabilitySource: AvailabilitySource;
   capacityStatus: CapacityStatus;
 }
 
@@ -78,7 +83,7 @@ function applyActionableExclusions(item: TimeWindowInput, overlap: Overlap): Joi
   if (overlap === "in-progress-no-join")
     return { included: false, overlap, reason: "in-progress-no-join" };
   if (item.isCancelled) return { included: false, overlap, reason: "cancelled" };
-  if (item.signupMode === "konsti" && item.capacityStatus === "full")
+  if (item.availabilitySource === "konsti" && item.capacityStatus === "full")
     return { included: false, overlap, reason: "konsti-full" };
   return { included: true, overlap, reason: null };
 }
@@ -119,7 +124,7 @@ export function classifyJoinableSoon(item: TimeWindowInput, nowMs: number): Join
  * miss, so a walk-in is joinable for as long as it is running.
  */
 export function isWalkInNow(item: TimeWindowInput, nowMs: number): boolean {
-  if (item.signupMode !== "none" || item.isCancelled) return false;
+  if (item.signupProvider !== "none" || item.isCancelled) return false;
   const startMs = Date.parse(item.start);
   const endMs = Date.parse(item.end);
   return startMs <= nowMs && nowMs < endMs;

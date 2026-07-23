@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { ProgramItem } from "@ropecon/program-core";
+import type { ProgramItemV2 } from "@ropecon/program-core";
 import { groupByGameSystem, renderGameSystems } from "./game-systems.ts";
 
 const item = (
   slug: string,
   gameSystem: string,
   start = "2026-07-24T12:00:00Z",
-): ProgramItem => ({
+): ProgramItemV2 => ({
   slug,
   parentId: "shared-parent",
   title: `Game ${slug}`,
@@ -18,10 +18,11 @@ const item = (
   location: "Hall",
   people: "",
   otherAuthor: "",
-  state: "accepted",
   isCancelled: false,
-  programType: "tabletopRPG",
   isGaming: true,
+  types: ["gaming"],
+  topics: ["rpg"],
+  registrations: ["not-required"],
   tags: [],
   genres: [],
   styles: [],
@@ -35,13 +36,13 @@ const item = (
   day: "2026-07-24",
   isPreConventionWeek: false,
   isRevolvingDoor: false,
-  konstiPageUrl: `https://ropekonsti.fi/program/item/${slug}`,
-  signupType: "notRequired",
-  signupMode: "none",
-  signupStrategy: "direct",
+  kompassiUrl: `https://v2.kompassi.eu/event/programs/${slug}`,
+  signupProvider: "none",
+  signupStrategy: null,
   requiresSignup: false,
   signupUrl: null,
   physicalSignupLocation: null,
+  availabilitySource: null,
   capacityStatus: "not-applicable",
   maxAttendance: null,
   joinedCount: null,

@@ -1,12 +1,12 @@
-import type { ProgramItem } from "@ropecon/program-core";
+import type { ProgramItemV2 } from "@ropecon/program-core";
 
-export const LANGUAGE_FREE = "languageFree";
+export const LANGUAGE_FREE = "lang-free";
 
 const KNOWN_LABELS: Readonly<Record<string, string>> = {
-  english: "English",
-  finnish: "Finnish",
-  languageFree: "Language-free",
-  swedish: "Swedish",
+  en: "English",
+  fi: "Finnish",
+  "lang-free": "Language-free",
+  sv: "Swedish",
 };
 
 /** Human-readable copy for both filter buttons and card metadata. */
@@ -23,7 +23,7 @@ export function languageLabel(language: string): string {
 }
 
 /** Distinct non-empty values observed in the current published program. */
-export function observedLanguages(items: readonly Pick<ProgramItem, "languages">[]): string[] {
+export function observedLanguages(items: readonly Pick<ProgramItemV2, "languages">[]): string[] {
   return [...new Set(items.flatMap((item) => item.languages).map((value) => value.trim()).filter(Boolean))]
     .sort((a, b) => languageLabel(a).localeCompare(languageLabel(b), "en"));
 }

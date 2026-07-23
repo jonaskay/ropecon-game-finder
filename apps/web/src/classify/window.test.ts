@@ -29,7 +29,8 @@ function item(overrides: Partial<TimeWindowInput> = {}): TimeWindowInput {
     end: at(70),
     isCancelled: false,
     isRevolvingDoor: false,
-    signupMode: "konsti",
+    signupProvider: "konsti",
+    availabilitySource: "konsti",
     capacityStatus: "available",
     ...overrides,
   };
@@ -112,7 +113,7 @@ describe("classifyJoinableSoon", () => {
 
   it("excludes a full online-Konsti session", () => {
     const r = classifyJoinableSoon(
-      item({ start: at(20), signupMode: "konsti", capacityStatus: "full" }),
+      item({ start: at(20), signupProvider: "konsti", capacityStatus: "full" }),
       NOW,
     );
     expect(r).toMatchObject({ included: false, reason: "konsti-full" });
@@ -120,7 +121,12 @@ describe("classifyJoinableSoon", () => {
 
   it("keeps a physical-signup session with unknown capacity visible", () => {
     const r = classifyJoinableSoon(
-      item({ start: at(20), signupMode: "physical", capacityStatus: "unknown" }),
+      item({
+        start: at(20),
+        signupProvider: "physical",
+        availabilitySource: null,
+        capacityStatus: "unknown",
+      }),
       NOW,
     );
     expect(r.included).toBe(true);
@@ -128,7 +134,12 @@ describe("classifyJoinableSoon", () => {
 
   it("keeps a walk-in (none) session visible", () => {
     const r = classifyJoinableSoon(
-      item({ start: at(20), signupMode: "none", capacityStatus: "not-applicable" }),
+      item({
+        start: at(20),
+        signupProvider: "none",
+        availabilitySource: null,
+        capacityStatus: "not-applicable",
+      }),
       NOW,
     );
     expect(r.included).toBe(true);
@@ -136,7 +147,12 @@ describe("classifyJoinableSoon", () => {
 
   it("does NOT exclude a full session when signup is physical (capacity isn't live)", () => {
     const r = classifyJoinableSoon(
-      item({ start: at(20), signupMode: "physical", capacityStatus: "full" }),
+      item({
+        start: at(20),
+        signupProvider: "physical",
+        availabilitySource: null,
+        capacityStatus: "full",
+      }),
       NOW,
     );
     expect(r.included).toBe(true);
@@ -145,6 +161,19 @@ describe("classifyJoinableSoon", () => {
   it("excludes a session outside the window", () => {
     const r = classifyJoinableSoon(item({ start: at(120), end: at(180) }), NOW);
     expect(r).toMatchObject({ included: false, reason: "no-overlap" });
+  });
+
+  it("keeps an unmatched Konsti-registration session with unknown capacity visible", () => {
+    const r = classifyJoinableSoon(
+      item({
+        start: at(20),
+        signupProvider: "konsti",
+        availabilitySource: null,
+        capacityStatus: "unknown",
+      }),
+      NOW,
+    );
+    expect(r.included).toBe(true);
   });
 });
 
@@ -220,7 +249,12 @@ describe("classifyInWindow", () => {
 
 describe("isWalkInNow", () => {
   const walkIn = (overrides: Partial<TimeWindowInput> = {}) =>
-    item({ signupMode: "none", capacityStatus: "not-applicable", ...overrides });
+    item({
+      signupProvider: "none",
+      availabilitySource: null,
+      capacityStatus: "not-applicable",
+      ...overrides,
+    });
 
   it("includes a no-signup game currently running", () => {
     expect(isWalkInNow(walkIn({ start: at(-30), end: at(90) }), NOW)).toBe(true);
@@ -239,11 +273,11 @@ describe("isWalkInNow", () => {
   });
 
   it("excludes an ongoing session that requires signup", () => {
-    expect(isWalkInNow(item({ start: at(-30), end: at(90), signupMode: "konsti" }), NOW)).toBe(
+    expect(isWalkInNow(item({ start: at(-30), end: at(90), signupProvider: "konsti" }), NOW)).toBe(
       false,
     );
     expect(
-      isWalkInNow(item({ start: at(-30), end: at(90), signupMode: "physical" }), NOW),
+      isWalkInNow(item({ start: at(-30), end: at(90), signupProvider: "physical" }), NOW),
     ).toBe(false);
   });
 

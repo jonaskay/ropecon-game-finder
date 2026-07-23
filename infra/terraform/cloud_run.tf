@@ -25,6 +25,21 @@ resource "google_cloud_run_v2_job" "program_job" {
           name  = "KONSTI_URL"
           value = var.konsti_url
         }
+
+        env {
+          name  = "KOMPASSI_URL"
+          value = var.kompassi_url
+        }
+
+        env {
+          name  = "KOMPASSI_EVENT_SLUG"
+          value = var.kompassi_event_slug
+        }
+
+        env {
+          name  = "KOMPASSI_LOCALE"
+          value = var.kompassi_locale
+        }
       }
     }
   }

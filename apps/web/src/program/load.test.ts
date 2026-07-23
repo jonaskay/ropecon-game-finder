@@ -1,22 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ProgramData } from "@ropecon/program-core";
+import type { ProgramDataV2, ProgramItemV2 } from "@ropecon/program-core";
 import { isNewer, loadProgramData, validateProgramData, type ProgramCache } from "./load.ts";
 
-const item = {
+const item: ProgramItemV2 = {
   slug: "one", parentId: "one", title: "Game", shortDescription: "", description: "",
   start: "2026-07-24T12:00:00Z", end: "2026-07-24T13:00:00Z", durationMinutes: 60,
-  location: "Hall", people: "", otherAuthor: "", state: "accepted", isCancelled: false,
-  programType: "tabletopRPG", isGaming: true, tags: [], genres: [], styles: [], languages: [],
+  location: "Hall", people: "", otherAuthor: "", isCancelled: false,
+  isGaming: true, types: ["gaming"], topics: ["rpg"], registrations: ["not-required"],
+  tags: [], genres: [], styles: [], languages: [],
   ageGroups: [], gameSystem: "", contentWarnings: "", accessibilityValues: [],
   otherAccessibilityInformation: "", entryFee: "", day: "2026-07-24",
   isPreConventionWeek: false, isRevolvingDoor: false,
-  konstiPageUrl: "https://ropekonsti.fi/program/item/one", signupType: "notRequired",
-  signupMode: "none" as const, signupStrategy: "direct", requiresSignup: false,
+  kompassiUrl: "https://v2.kompassi.eu/event/programs/one",
+  signupProvider: "none", signupStrategy: null, requiresSignup: false,
   signupUrl: null, physicalSignupLocation: null, capacityStatus: "not-applicable" as const,
+  availabilitySource: null,
   maxAttendance: null, joinedCount: null, remainingSeats: null, isFull: null,
 };
-const data = (generatedAt = "2026-07-21T12:00:00Z"): ProgramData =>
-  ({ generatedAt, source: "konsti", items: [item] });
+const data = (generatedAt = "2026-07-21T12:00:00Z"): ProgramDataV2 => ({
+  schemaVersion: 2,
+  generatedAt,
+  source: "kompassi+konsti",
+  sources: {
+    kompassi: { eventSlug: "event", fetchedAt: generatedAt },
+    konsti: { fetchedAt: generatedAt },
+  },
+  items: [item],
+});
 
 function memoryCache(initial: unknown = null): ProgramCache & { value: unknown } {
   return { value: initial, async read() { return this.value; }, async write(value) { this.value = value; } };
@@ -25,7 +35,27 @@ function memoryCache(initial: unknown = null): ProgramCache & { value: unknown }
 describe("published program boundary", () => {
   it("validates the complete envelope and rejects invalid responses", () => {
     expect(validateProgramData(data())).toEqual(data());
-    expect(() => validateProgramData({ source: "konsti", items: [] })).toThrow("invalid envelope");
+    expect(() => validateProgramData({ source: "konsti", items: [] })).toThrow(
+      "invalid version-2 envelope",
+    );
+  });
+
+  it("rejects the old v1 envelope and ignores it as a browser cache entry", async () => {
+    const v1 = {
+      generatedAt: "2026-07-21T13:00:00Z",
+      source: "konsti",
+      items: [],
+    };
+    expect(() => validateProgramData(v1)).toThrow("version-2 envelope");
+
+    const cache = memoryCache(v1);
+    const result = await loadProgramData({
+      url: "https://storage.example/program",
+      cache,
+      fetchProgram: async () => Response.json(data()),
+    });
+    expect(result.status).toBe("ready-network");
+    expect(cache.value).toEqual(data());
   });
 
   it("fetches the exact external URL and caches valid data", async () => {

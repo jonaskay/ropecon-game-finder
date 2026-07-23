@@ -1,7 +1,24 @@
-const CACHE = "ropecon-program-v1";
+const CACHE = "ropecon-program-v2";
 
-const valid = value => value && value.source === "konsti" &&
-  Number.isFinite(Date.parse(value.generatedAt)) && Array.isArray(value.items);
+const valid = value => value && value.schemaVersion === 2 &&
+  value.source === "kompassi+konsti" &&
+  Number.isFinite(Date.parse(value.generatedAt)) &&
+  value.sources && value.sources.kompassi && value.sources.konsti &&
+  Number.isFinite(Date.parse(value.sources.kompassi.fetchedAt)) &&
+  Number.isFinite(Date.parse(value.sources.konsti.fetchedAt)) &&
+  Array.isArray(value.items) &&
+  value.items.every(item => item && typeof item.kompassiUrl === "string");
+
+self.addEventListener("activate", event => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter(key => key.startsWith("ropecon-program-") && key !== CACHE)
+        .map(key => caches.delete(key)),
+    );
+  })());
+});
 
 self.addEventListener("fetch", event => {
   const dataUrl = new URL(event.request.url);

@@ -1,9 +1,9 @@
-import type { ProgramItem } from "@ropecon/program-core";
+import type { ProgramItemV2 } from "@ropecon/program-core";
 import { escapeHtml, renderProgramItem } from "./render-card.ts";
 
 export interface GameSystemGroup {
   name: string;
-  items: ProgramItem[];
+  items: ProgramItemV2[];
 }
 
 /**
@@ -11,7 +11,7 @@ export interface GameSystemGroup {
  * punctuation, and spelling remain distinct and the first source spelling is shown.
  */
 export function groupByGameSystem(
-  items: readonly ProgramItem[],
+  items: readonly ProgramItemV2[],
   locale: string,
 ): GameSystemGroup[] {
   const groups = new Map<string, GameSystemGroup>();

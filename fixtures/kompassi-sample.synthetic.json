@@ -1,0 +1,137 @@
+{
+  "data": {
+    "event": {
+      "name": "Synthetic Ropecon",
+      "timezone": "Europe/Helsinki",
+      "program": {
+        "isSchedulePublic": true,
+        "scheduleItems": [
+          {
+            "slug": "pi-001",
+            "title": "Dragons of the North",
+            "location": "Hall A",
+            "startTime": "2026-07-24T15:00:00+03:00",
+            "endTime": "2026-07-24T19:00:00+03:00",
+            "durationMinutes": 240,
+            "isCancelled": false,
+            "cachedDimensions": {
+              "type": ["gaming"],
+              "topic": ["rpg"],
+              "registration": ["konsti"],
+              "language": ["fi"]
+            },
+            "links": [
+              {
+                "href": "https://ropekonsti.fi/program/item/pi-001"
+              }
+            ],
+            "program": {
+              "slug": "pi-001",
+              "color": "Green",
+              "links": [
+                {
+                  "href": "https://v2.kompassi.eu/synthetic/programs/pi-001"
+                }
+              ]
+            }
+          },
+          {
+            "slug": "pi-002",
+            "title": "The Endless Masquerade",
+            "location": "Outdoor stage",
+            "startTime": "2026-07-25T12:00:00+03:00",
+            "endTime": "2026-07-25T15:00:00+03:00",
+            "durationMinutes": 180,
+            "isCancelled": true,
+            "cachedDimensions": {
+              "type": ["gaming"],
+              "topic": ["larp"],
+              "registration": ["ropelarp"],
+              "language": ["en"]
+            },
+            "links": [],
+            "program": {
+              "slug": "pi-002",
+              "color": "Green",
+              "links": [
+                {
+                  "href": "https://v2.kompassi.eu/synthetic/programs/pi-002"
+                }
+              ]
+            }
+          },
+          {
+            "slug": "kompassi-only-walk-in",
+            "title": "Synthetic Walk-in Game",
+            "location": "Table area",
+            "startTime": "2026-07-26T10:00:00+03:00",
+            "endTime": "2026-07-26T11:00:00+03:00",
+            "durationMinutes": 60,
+            "isCancelled": false,
+            "cachedDimensions": {
+              "type": ["gaming"],
+              "registration": ["not-required"]
+            },
+            "links": [],
+            "program": {
+              "slug": "synthetic-walk-in-game",
+              "color": "Blue",
+              "links": [
+                {
+                  "href": "https://v2.kompassi.eu/synthetic/programs/synthetic-walk-in-game"
+                }
+              ]
+            }
+          },
+          {
+            "slug": "kompassi-only-konsti",
+            "title": "Signup Not Yet Open",
+            "location": "Room B",
+            "startTime": "2026-07-26T11:00:00+03:00",
+            "endTime": "2026-07-26T12:00:00+03:00",
+            "durationMinutes": 60,
+            "isCancelled": false,
+            "cachedDimensions": {
+              "type": ["gaming"],
+              "topic": ["rpg"],
+              "registration": ["konsti"],
+              "language": ["en"]
+            },
+            "links": [],
+            "program": {
+              "slug": "signup-not-yet-open",
+              "color": "Blue",
+              "links": [
+                {
+                  "href": "https://v2.kompassi.eu/synthetic/programs/signup-not-yet-open"
+                }
+              ]
+            }
+          },
+          {
+            "slug": "minimum-documented-item",
+            "title": "Minimum Synthetic Item",
+            "location": "",
+            "startTime": "2026-07-26T12:00:00+03:00",
+            "endTime": "2026-07-26T12:30:00+03:00",
+            "durationMinutes": 30,
+            "isCancelled": false,
+            "cachedDimensions": {
+              "type": ["gaming"]
+            },
+            "links": [],
+            "program": {
+              "slug": "minimum-documented-item",
+              "color": "",
+              "links": [
+                {
+                  "href": "https://v2.kompassi.eu/synthetic/programs/minimum-documented-item"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

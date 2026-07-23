@@ -10,7 +10,7 @@
  * first-run guidance; Step 9 warns when the snapshot has aged past 15 minutes.
  *
  * The page reads ONLY the published `program.json` client contract (handoff Step 4) —
- * never the raw Konsti response. Since program.json is no longer baked into the build
+ * never either raw upstream response. Since program.json is no longer baked into the build
  * (it is published to external storage by a separate job), the page fetches it at
  * runtime from PUBLIC_PROGRAM_DATA_URL, caches it in localStorage, and renders in the
  * browser. A service worker keeps a previously-loaded program available offline. Copy
@@ -35,8 +35,8 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       <p class="meta" id="status" aria-live="polite">Loading the latest program…</p>
       <p class="intro">
         Gaming sessions you can join, filtered to what's playable soon. This finder is
-        read-only — it never signs you up: online signups open in <strong>Konsti</strong>,
-        others are handled at a convention desk.
+        read-only — open each session in <strong>Kompassi</strong> for authoritative
+        program details; available online signup actions open separately.
       </p>
       <nav class="finder-nav" aria-label="Finder views">
         <a href="/game-systems/">Browse by game system</a>
@@ -121,7 +121,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
        * attributes on each `.session`, so the same pure classifiers drive the filter
        * views. `?now=` overrides the device clock for testing outside con dates (Step 7).
        */
-      import type { ProgramData, ProgramItem } from "@ropecon/program-core";
+      import type { ProgramDataV2, ProgramItemV2 } from "@ropecon/program-core";
       import { loadProgramData, localStorageProgramCache } from "../program/load.ts";
       import { escapeHtml as esc, renderProgramItem } from "../program/render-card.ts";
       import {
@@ -264,10 +264,10 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 
       // ---- Rendering -------------------------------------------------------------------
 
-      function renderProgram(data: ProgramData): void {
+      function renderProgram(data: ProgramDataV2): void {
         // Sort by start, then group into day sections.
         const sorted = [...data.items].sort((a, b) => a.start.localeCompare(b.start));
-        const days: { day: string; items: ProgramItem[] }[] = [];
+        const days: { day: string; items: ProgramItemV2[] }[] = [];
         for (const item of sorted) {
           const bucket = days.find((d) => d.day === item.day);
           if (bucket) bucket.items.push(item);
@@ -312,7 +312,9 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
               end: el.dataset.end ?? "",
               isCancelled: el.dataset.cancelled === "true",
               isRevolvingDoor: el.dataset.revolving === "true",
-              signupMode: el.dataset.signupMode,
+              signupProvider: el.dataset.signupProvider,
+              availabilitySource:
+                el.dataset.availabilitySource === "konsti" ? "konsti" : null,
               capacityStatus: el.dataset.capacity,
             } as TimeWindowInput,
           };
@@ -535,7 +537,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       // come only from values observed in this snapshot; language-free sessions remain
       // visible alongside every selected spoken language.
 
-      function initLanguageFilter(items: readonly ProgramItem[]): void {
+      function initLanguageFilter(items: readonly ProgramItemV2[]): void {
         if (!languageFilter || !languageOptions) return;
         const options = observedLanguages(items);
         languageOptions.innerHTML = [
@@ -632,7 +634,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 
       // Populate the day dropdowns + quick buttons, seed the selection (from ?from/?to
       // when present, else the data-derived default), and resolve the first window.
-      function initSlotPicker(items: ProgramItem[]): void {
+      function initSlotPicker(items: ProgramItemV2[]): void {
         const days = conDays(items);
         if (slotDay) populateDaySelect(slotDay, days);
         if (slotToDay) populateDaySelect(slotToDay, days);
@@ -745,7 +747,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
                 `Heads up: this program snapshot is ${ageMinutes} minutes old ` +
                 `(as of ${stampFmt.format(generatedAtMs)}, Helsinki). ` +
                 `Seat availability and cancellations may have changed since then — ` +
-                `check Konsti before relying on a seat.`;
+                `check the program details in Kompassi before relying on a seat.`;
             }
           }
         }
@@ -1160,9 +1162,9 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         font-size: 0.85rem;
       }
 
-      /* Informational Konsti page link (§7, UX #4): a quiet "full details" link on every
+      /* Informational Kompassi page link: a quiet "full details" link on every
          card, visually secondary to the signup action so the two never read as rival CTAs. */
-      .konsti-page {
+      .kompassi-page {
         margin: 0.5rem 0 0;
         font-size: 0.85rem;
       }

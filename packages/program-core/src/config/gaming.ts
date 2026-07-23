@@ -30,3 +30,23 @@ export const NON_GAMING_PROGRAM_TYPES: readonly string[] = [
 export function isGamingProgramType(programType: string): boolean {
   return GAMING_PROGRAM_TYPES.includes(programType);
 }
+
+/**
+ * Kompassi `type` dimension values the finder treats as gaming. This is a
+ * SEPARATE vocabulary from GAMING_PROGRAM_TYPES above: that list classifies
+ * Konsti's `programType`, while Kompassi's `type` dimension is coarse. Per
+ * docs/kompassi-api.md the observed siblings are `gaming`, `tournament`,
+ * `workshop`, `presentation`, `panel`, `performance`, `dancing`, `meet`,
+ * `other` — of which only `gaming` and `tournament` are gaming program (finer
+ * distinctions like RPG vs boardgame live in the `topic` dimension). A
+ * tournament carries `type: tournament` WITHOUT `gaming`, so testing for the
+ * literal `"gaming"` alone silently drops every tournament.
+ */
+export const GAMING_TYPE_DIMENSION_VALUES: readonly string[] = [
+  "gaming",
+  "tournament",
+];
+
+export function isGamingTypeValue(typeValue: string): boolean {
+  return GAMING_TYPE_DIMENSION_VALUES.includes(typeValue);
+}

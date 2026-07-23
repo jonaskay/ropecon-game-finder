@@ -62,6 +62,26 @@ describe("mergeProgramSources", () => {
     expect(result.items.some(item => item.scheduleItem.slug === "pi-004")).toBe(false);
   });
 
+  it("includes gaming-sibling types like tournaments and excludes non-gaming types", () => {
+    const changed = cloneSchedule();
+    const tournament = structuredClone(changed.scheduleItems[0]!);
+    tournament.slug = "catan-tournament";
+    tournament.program.slug = "catan-tournament";
+    tournament.cachedDimensions.type = ["tournament"];
+    const workshop = structuredClone(changed.scheduleItems[0]!);
+    workshop.slug = "beginners-workshop";
+    workshop.program.slug = "beginners-workshop";
+    workshop.cachedDimensions.type = ["workshop"];
+    changed.scheduleItems.push(tournament, workshop);
+
+    const result = mergeProgramSources(changed, projected);
+    const slugs = result.items.map(item => item.scheduleItem.slug);
+    expect(slugs).toContain("catan-tournament");
+    expect(slugs).not.toContain("beginners-workshop");
+    expect(result.report.kompassiGamingItems).toBe(6);
+    expect(result.hasHardFailure).toBe(false);
+  });
+
   it("reports aggregate material conflicts while retaining the match", () => {
     const conflicting = structuredClone(projected);
     const item = conflicting.find(entry => entry.programItem.programItemId === "pi-001")!;

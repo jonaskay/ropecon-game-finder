@@ -1,7 +1,7 @@
+import { isGamingTypeValue } from "../config/gaming.ts";
 import type { ProjectedItem } from "../konsti/schema.ts";
 import {
   dimensionValues,
-  hasDimensionValue,
   type KompassiSchedule,
   type KompassiScheduleItem,
 } from "../kompassi/schema.ts";
@@ -30,6 +30,15 @@ const KNOWN_DIMENSIONS = new Set([
 ]);
 
 const KNOWN_REGISTRATIONS = new Set(["not-required", "konsti", "ropelarp"]);
+
+/**
+ * The finder's inclusion gate. A Kompassi item is gaming if any value of its
+ * `type` dimension is a gaming type — this admits `tournament` (and any future
+ * gaming sibling), which testing for the literal `"gaming"` alone would drop.
+ */
+function isGamingScheduleItem(item: KompassiScheduleItem): boolean {
+  return dimensionValues(item, "type").some(isGamingTypeValue);
+}
 
 function duplicateValues(values: readonly string[]): string[] {
   const counts = new Map<string, number>();
@@ -117,7 +126,7 @@ function auditKompassi(
     for (const dimension of Object.keys(item.cachedDimensions)) {
       if (!KNOWN_DIMENSIONS.has(dimension)) unknownDimensions.add(dimension);
     }
-    if (!hasDimensionValue(item, "type", "gaming")) continue;
+    if (!isGamingScheduleItem(item)) continue;
 
     const registrations = [...new Set(dimensionValues(item, "registration"))];
     if (registrations.length === 0) missingRegistration += 1;
@@ -190,9 +199,7 @@ export function mergeProgramSources(
     }
   }
 
-  const gamingItems = kompassi.scheduleItems.filter(item =>
-    hasDimensionValue(item, "type", "gaming")
-  );
+  const gamingItems = kompassi.scheduleItems.filter(isGamingScheduleItem);
   const mergedItems: MergedProgramItem[] = gamingItems.map(scheduleItem => ({
     scheduleItem,
     konsti: konstiById.get(scheduleItem.slug) ?? null,

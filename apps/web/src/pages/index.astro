@@ -86,6 +86,10 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
           <p class="slot-echo" aria-live="polite" hidden></p>
           <p class="slot-error" role="alert" hidden></p>
         </fieldset>
+        <fieldset class="language-filter" hidden>
+          <legend>Language</legend>
+          <div class="language-options" role="group" aria-label="Filter sessions by language"></div>
+        </fieldset>
         <p class="result-count" aria-live="polite"></p>
       </div>
       <p class="now-notice" hidden></p>
@@ -137,6 +141,11 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       } from "../classify/slot.ts";
       import { classifyFreshness } from "../classify/freshness.ts";
       import { buildOrientation, type OrientationModel } from "../classify/orientation.ts";
+      import {
+        languageLabel,
+        matchesLanguage,
+        observedLanguages,
+      } from "../classify/language.ts";
 
       type View = "soon" | "walkins" | "slot" | "all";
 
@@ -160,6 +169,8 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       const slotToTime = document.querySelector<HTMLInputElement>("[data-slot-to-time]");
       const slotEcho = document.querySelector<HTMLElement>(".slot-echo");
       const slotError = document.querySelector<HTMLElement>(".slot-error");
+      const languageFilter = document.querySelector<HTMLFieldSetElement>(".language-filter");
+      const languageOptions = document.querySelector<HTMLElement>(".language-options");
       const url = document.querySelector<HTMLMetaElement>('meta[name="program-data-url"]')!.content;
 
       // ---- Display formatters (UTC instants in, con-local strings out) -----------------
@@ -349,6 +360,10 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 
       function renderItem(item: ProgramItem): string {
         const capacity = capacityLabel(item);
+        const languages =
+          item.languages.length > 0
+            ? item.languages.map(languageLabel).join(", ")
+            : languageLabel("");
         // gameSystem is intentionally free text: preserve the published value exactly,
         // but suppress values that contain no visible content.
         const gameSystem = item.gameSystem.trim()
@@ -382,7 +397,8 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
           data-cancelled="${String(item.isCancelled)}"
           data-revolving="${String(item.isRevolvingDoor)}"
           data-signup-mode="${esc(item.signupMode)}"
-          data-capacity="${esc(item.capacityStatus)}">
+          data-capacity="${esc(item.capacityStatus)}"
+          data-languages="${esc(JSON.stringify(item.languages))}">
           <div class="session-head">
             <span class="time">${timeRange(item.start, item.end)}</span>
             <h3 class="title">${esc(item.title)}</h3>
@@ -398,6 +414,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
           ${renderContentWarning(item)}
           <dl class="facts">
             ${gameSystem}
+            <div><dt>Language</dt><dd>${esc(languages)}</dd></div>
             <div><dt>Location</dt><dd>${location}</dd></div>
             <div>
               <dt>Signup</dt>
@@ -434,8 +451,9 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       // Rebuilt from the rendered DOM so the pure classifiers stay the single source of
       // truth for what counts as joinable.
 
-      let sessions: { el: HTMLLIElement; input: TimeWindowInput }[] = [];
+      let sessions: { el: HTMLLIElement; input: TimeWindowInput; languages: string[] }[] = [];
       let daySections: HTMLElement[] = [];
+      let selectedLanguage: string | null = null;
 
       const params = new URLSearchParams(location.search);
       const { nowMs, overridden } = resolveNow(params.get("now"), Date.now());
@@ -443,17 +461,27 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       let selectedWindow = resolveWindow(params.get("from"), params.get("to"), nowMs);
 
       function collectSessions(): void {
-        sessions = [...programRoot.querySelectorAll<HTMLLIElement>(".session")].map((el) => ({
-          el,
-          input: {
-            start: el.dataset.start ?? "",
-            end: el.dataset.end ?? "",
-            isCancelled: el.dataset.cancelled === "true",
-            isRevolvingDoor: el.dataset.revolving === "true",
-            signupMode: el.dataset.signupMode,
-            capacityStatus: el.dataset.capacity,
-          } as TimeWindowInput,
-        }));
+        sessions = [...programRoot.querySelectorAll<HTMLLIElement>(".session")].map((el) => {
+          let languages: string[] = [];
+          try {
+            const parsed: unknown = JSON.parse(el.dataset.languages ?? "[]");
+            if (Array.isArray(parsed)) languages = parsed.filter((value): value is string => typeof value === "string");
+          } catch {
+            // Invalid card metadata behaves like an unspecified language, never as a match.
+          }
+          return {
+            el,
+            languages,
+            input: {
+              start: el.dataset.start ?? "",
+              end: el.dataset.end ?? "",
+              isCancelled: el.dataset.cancelled === "true",
+              isRevolvingDoor: el.dataset.revolving === "true",
+              signupMode: el.dataset.signupMode,
+              capacityStatus: el.dataset.capacity,
+            } as TimeWindowInput,
+          };
+        });
         daySections = [...programRoot.querySelectorAll<HTMLElement>(".day")];
       }
 
@@ -487,13 +515,19 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 
       // Show every session (the honest baseline); the filtered views narrow from here.
       function revealAll(): void {
-        for (const { el } of sessions) {
-          el.hidden = false;
+        let shown = 0;
+        for (const { el, languages } of sessions) {
+          const included = matchesLanguage(languages, selectedLanguage);
+          el.hidden = !included;
+          if (included) shown += 1;
           clearBadge(el);
         }
-        for (const section of daySections) section.hidden = false;
-        if (emptyEl) emptyEl.hidden = true;
-        if (countEl) countEl.textContent = `${sessions.length} sessions`;
+        syncDayHeadings();
+        if (emptyEl) {
+          emptyEl.textContent = "No sessions match this language.";
+          emptyEl.hidden = shown > 0;
+        }
+        if (countEl) countEl.textContent = `${shown} sessions`;
       }
 
       // Apply a per-session predicate, badge the kept ones, and report the count/empty state.
@@ -503,8 +537,10 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         emptyText: string,
       ): number {
         let shown = 0;
-        for (const { el, input } of sessions) {
-          const { included, badge } = keep(input);
+        for (const { el, input, languages } of sessions) {
+          const result = keep(input);
+          const included = result.included && matchesLanguage(languages, selectedLanguage);
+          const badge = included ? result.badge : null;
           el.hidden = !included;
           if (included) {
             shown += 1;
@@ -643,7 +679,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
           );
           // Zero joinable-soon is legitimate (pre-con / early in the day): orient the guest
           // instead of leaving the bare empty-state line to carry the whole first impression.
-          if (shown === 0 && orientation) {
+          if (shown === 0 && orientation && selectedLanguage === null) {
             renderOrientation(orientation);
             orientationEl!.hidden = false;
             if (emptyEl) emptyEl.hidden = true;
@@ -657,6 +693,37 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         }
         if (slotPicker) slotPicker.hidden = view !== "slot";
         render(view);
+      }
+
+      // ---- Primary language filter (issue-06) -----------------------------------------
+      // Starts unfiltered so loading the finder never silently hides sessions. Options
+      // come only from values observed in this snapshot; language-free sessions remain
+      // visible alongside every selected spoken language.
+
+      function initLanguageFilter(items: readonly ProgramItem[]): void {
+        if (!languageFilter || !languageOptions) return;
+        const options = observedLanguages(items);
+        languageOptions.innerHTML = [
+          '<button type="button" class="language-btn" data-language="" aria-pressed="true">All languages</button>',
+          ...options.map(
+            (language) =>
+              `<button type="button" class="language-btn" data-language="${esc(language)}" aria-pressed="false">` +
+              `${esc(languageLabel(language))}</button>`,
+          ),
+        ].join("");
+        languageFilter.hidden = false;
+        languageOptions.addEventListener("click", (event) => {
+          const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".language-btn");
+          if (!button) return;
+          selectedLanguage = button.dataset.language || null;
+          for (const candidate of languageOptions.querySelectorAll<HTMLButtonElement>(".language-btn")) {
+            candidate.setAttribute("aria-pressed", String(candidate === button));
+          }
+          const activeView =
+            viewButtons.find((candidate) => candidate.getAttribute("aria-pressed") === "true")
+              ?.dataset.view as View | undefined;
+          render(activeView ?? "soon");
+        });
       }
 
       // ---- "My time slot" picker (§6, issue-05) --------------------------------------
@@ -770,6 +837,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         const data = result.data;
         renderProgram(data);
         collectSessions();
+        initLanguageFilter(data.items);
 
         // Data-derived orientation for the empty joinable-soon default (§6, UX #2).
         orientation = buildOrientation(data.items, nowMs);
@@ -968,6 +1036,47 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 
       .slot-picker[hidden] {
         display: none;
+      }
+
+      .language-filter {
+        flex-basis: 100%;
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+
+      .language-filter[hidden] {
+        display: none;
+      }
+
+      .language-filter legend {
+        margin-bottom: 0.35rem;
+        padding: 0;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+
+      .language-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+      }
+
+      .language-btn {
+        appearance: none;
+        border: 1px solid var(--accent);
+        background: #fff;
+        color: var(--accent);
+        font: inherit;
+        font-size: 0.9rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+
+      .language-btn[aria-pressed="true"] {
+        background: var(--accent);
+        color: #fff;
       }
 
       .slot-picker legend {

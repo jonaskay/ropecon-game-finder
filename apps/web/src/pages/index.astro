@@ -255,6 +255,26 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       const isKonstiFull = (item: ProgramItem) =>
         item.signupMode === "konsti" && item.capacityStatus === "full";
 
+      // Content warning (§7 "Content warnings surfaced", UX decision #7). Warnings range
+      // from empty to paragraph-length, and some sit on walk-in games a guest can enter
+      // cold — so a non-empty warning always gets a labelled indicator that reads as a
+      // warning, with the full source text one tap away and never truncated. A native
+      // <details> keeps it keyboard-accessible and its <summary> labels the control even
+      // while collapsed, so nothing serious hides behind an unlabelled tap. The raw text
+      // is rendered as-is (no taxonomy), escaped, with whitespace preserved via CSS.
+      function renderContentWarning(item: ProgramItem): string {
+        const warning = item.contentWarnings.trim();
+        if (!warning) return "";
+        return `<details class="content-warning">
+          <summary>
+            <span class="cw-icon" aria-hidden="true">⚠</span>
+            <span class="cw-label">Content warning</span>
+            <span class="cw-hint" aria-hidden="true"></span>
+          </summary>
+          <p class="cw-text">${esc(warning)}</p>
+        </details>`;
+      }
+
       // ---- Rendering -------------------------------------------------------------------
 
       // Venue-aware map link (§7 "Map links (venue-aware)", UX decision #6). On-site
@@ -301,6 +321,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
               : ""
           }
           ${item.shortDescription ? `<p class="short">${esc(item.shortDescription)}</p>` : ""}
+          ${renderContentWarning(item)}
           <dl class="facts">
             <div><dt>Location</dt><dd>${location}</dd></div>
             <div>
@@ -962,6 +983,68 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
         display: block;
         color: var(--muted);
         font-size: 0.85rem;
+      }
+
+      /* Content warning (§7): a labelled, caution-styled indicator that stays legible
+         while collapsed and expands to the full, untruncated source text. */
+      .content-warning {
+        margin: 0.5rem 0;
+        border: 1px solid #e0b400;
+        border-left: 3px solid #b57e00;
+        border-radius: 0.3rem;
+        background: #fff9e6;
+      }
+
+      .content-warning summary {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.6rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #7a5b00;
+        list-style: none;
+      }
+
+      .content-warning summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .cw-icon {
+        font-size: 0.95rem;
+      }
+
+      .cw-label {
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        font-size: 0.75rem;
+      }
+
+      .cw-hint {
+        margin-left: auto;
+        font-weight: 600;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        opacity: 0.75;
+      }
+
+      .cw-hint::after {
+        content: "Show";
+      }
+
+      .content-warning[open] .cw-hint::after {
+        content: "Hide";
+      }
+
+      .cw-text {
+        margin: 0;
+        padding: 0 0.6rem 0.55rem;
+        font-size: 0.85rem;
+        color: var(--fg);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
 
       .off-site-note {

@@ -349,6 +349,11 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 
       function renderItem(item: ProgramItem): string {
         const capacity = capacityLabel(item);
+        // gameSystem is intentionally free text: preserve the published value exactly,
+        // but suppress values that contain no visible content.
+        const gameSystem = item.gameSystem.trim()
+          ? `<div><dt>System</dt><dd>${esc(item.gameSystem)}</dd></div>`
+          : "";
         // The signup ACTION (konsti only, and never on a cancelled session): links to the
         // same Konsti item page as the info link below, but framed as the thing to do to
         // get a seat. Suppressed for none/physical so a walk-in/desk signup never looks
@@ -392,6 +397,7 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
           ${item.shortDescription ? `<p class="short">${esc(item.shortDescription)}</p>` : ""}
           ${renderContentWarning(item)}
           <dl class="facts">
+            ${gameSystem}
             <div><dt>Location</dt><dd>${location}</dd></div>
             <div>
               <dt>Signup</dt>
@@ -847,7 +853,9 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
       if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js");
     </script>
 
-    <style>
+    <!-- The program cards and several controls are created by the client script, so this
+         page stylesheet must also match elements without Astro's compile-time scope ID. -->
+    <style is:global>
       :root {
         --fg: #1a1a1a;
         --muted: #666;
@@ -1176,6 +1184,8 @@ if (!programUrl) throw new Error("PUBLIC_PROGRAM_DATA_URL is required");
 
       .facts dd {
         margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
       }
 
       .intro {
